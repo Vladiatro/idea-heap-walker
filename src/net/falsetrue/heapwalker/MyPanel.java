@@ -5,12 +5,20 @@ import com.intellij.debugger.engine.DebugProcessImpl;
 import com.intellij.debugger.engine.events.DebuggerCommandImpl;
 import com.intellij.debugger.engine.jdi.VirtualMachineProxy;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.newvfs.impl.VirtualDirectoryImpl;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBList;
 import com.intellij.xdebugger.XDebugSession;
 import com.intellij.xdebugger.XDebuggerManager;
+import com.sun.jdi.Field;
+import com.sun.jdi.ObjectReference;
+import com.sun.jdi.ReferenceType;
+import com.sun.jdi.VirtualMachine;
+import com.sun.tools.jdi.ClassTypeImpl;
 
 import javax.swing.*;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingDeque;
@@ -20,6 +28,16 @@ public class MyPanel extends JPanel {
     private JBList list;
     private final Project project;
     private volatile BlockingQueue<VirtualMachineProxy> proxyQueue = new LinkedBlockingDeque<>();
+
+    private VirtualMachine getVM(VirtualMachineProxy proxy) {
+        try {
+            java.lang.reflect.Field field = proxy.getClass().getDeclaredField("l");
+            field.setAccessible(true);
+            return (VirtualMachine) field.get(proxy);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     public MyPanel(Project project) {
         this.project = project;
@@ -55,14 +73,14 @@ public class MyPanel extends JPanel {
 
                     @Override
                     protected void done() {
-                        List classes =
+                        VirtualMachine vm = getVM(proxy);
+                        List<ReferenceType> classes =
                                 proxy
                                 .allClasses();
                         countLabel.setText(classes.size() + " classes");
-
                         classes.forEach(o -> {
+                            System.out.println(vm.instanceCounts(Collections.singletonList(o))[0]);
                             model.addElement(o.toString());
-                            System.out.println(o.toString());
                         });
                     }
                 }.execute();
