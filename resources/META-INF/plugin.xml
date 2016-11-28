@@ -25,7 +25,7 @@
   -->
 
   <extensions defaultExtensionNs="com.intellij">
-    <toolWindow id="GS Debugger" anchor="bottom" secondary="false"
+    <toolWindow id="GS Debugger" anchor="right" secondary="false"
                 factoryClass="net.falsetrue.heapwalker.WindowFactory" />
 
     <projectService serviceImplementation="net.falsetrue.heapwalker.MyStateService" />
