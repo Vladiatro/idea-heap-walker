@@ -4,6 +4,7 @@ import com.intellij.debugger.DebuggerManager;
 import com.intellij.debugger.engine.DebugProcessImpl;
 import com.intellij.debugger.engine.events.DebuggerCommandImpl;
 import com.intellij.debugger.engine.jdi.VirtualMachineProxy;
+import com.intellij.debugger.jdi.VirtualMachineProxyImpl;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.ScrollPaneFactory;
 import com.intellij.ui.components.JBLabel;
@@ -15,9 +16,9 @@ import com.sun.jdi.*;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
+import java.awt.event.ActionEvent;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -31,18 +32,10 @@ public class MyPanel extends BorderLayoutPanel {
     private volatile BlockingQueue<VirtualMachineProxy> proxyQueue = new LinkedBlockingDeque<>();
 
     private VirtualMachine getVM(VirtualMachineProxy proxy) {
-        try {
-            java.lang.reflect.Field[] fields = proxy.getClass().getDeclaredFields();
-            for (Field field : fields) {
-                field.setAccessible(true);
-                if (field.get(proxy) instanceof VirtualMachine) {
-                    return (VirtualMachine) field.get(proxy);
-                }
-            }
+        if (!(proxy instanceof VirtualMachineProxyImpl)) {
             throw new RuntimeException("Can't connect to VirtualMachine");
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException(e);
         }
+        return ((VirtualMachineProxyImpl) proxy).getVirtualMachine();
     }
 
     public MyPanel(Project project) {
@@ -68,7 +61,7 @@ public class MyPanel extends BorderLayoutPanel {
 
         // outputs current classes
         JButton button = new JButton("Magic button");
-        button.addActionListener(e -> {
+        button.addActionListener((ActionEvent e) -> {
             model.clear();
             XDebugSession debugSession = XDebuggerManager.getInstance(project).getCurrentSession();
             if (debugSession != null) {
@@ -113,8 +106,11 @@ public class MyPanel extends BorderLayoutPanel {
                             try {
                                 List<StackFrame> frames = threadReference.frames();
                                 frames.forEach(frame -> {
-                                    System.out.println(" " + frame.location());
                                     try {
+                                        System.out.println(" " + frame.location().declaringType() + " "
+                                            + frame.location().sourceName() + " " + frame.location().sourcePath()
+                                            + " " + frame.location().method().name() + " " +
+                                            + frame.location().lineNumber());
                                         frame
                                             .visibleVariables()
                                             .forEach(
