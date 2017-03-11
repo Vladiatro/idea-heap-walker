@@ -6,6 +6,7 @@ import com.intellij.debugger.engine.events.DebuggerCommandImpl;
 import com.intellij.debugger.engine.jdi.VirtualMachineProxy;
 import com.intellij.debugger.jdi.VirtualMachineProxyImpl;
 import com.intellij.openapi.project.Project;
+import com.intellij.ui.DoubleClickListener;
 import com.intellij.ui.ScrollPaneFactory;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.table.JBTable;
@@ -13,25 +14,37 @@ import com.intellij.util.ui.components.BorderLayoutPanel;
 import com.intellij.xdebugger.XDebugSession;
 import com.intellij.xdebugger.XDebuggerManager;
 import com.sun.jdi.*;
+import net.falsetrue.heapwalker.breakpoints.CreationMonitoring;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
-import java.awt.event.ActionEvent;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.awt.event.MouseEvent;
+import java.util.*;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingDeque;
 
 public class MyPanel extends BorderLayoutPanel {
+    private static final int UPDATE_TIME = 7000;
+    private final ClassesTableModel model;
+
     private JBLabel countLabel;
     private JBTable table;
     private final Project project;
-    private volatile BlockingQueue<VirtualMachineProxy> proxyQueue = new LinkedBlockingDeque<>();
+    private volatile List<ClassInstance> classInstances;
+    private volatile boolean debugActive = false;
+    private CreationMonitoring creationMonitoring;
 
-    private VirtualMachine getVM(VirtualMachineProxy proxy) {
+    private VirtualMachine getVM(DebugProcessImpl debugProcess) throws InterruptedException {
+        BlockingQueue<VirtualMachineProxy> proxyQueue = new ArrayBlockingQueue<>(1);
+        debugProcess.getManagerThread().invoke(new DebuggerCommandImpl() {
+            @Override
+            protected void action() throws Exception {
+                proxyQueue.add(debugProcess.getVirtualMachineProxy());
+            }
+        });
+        VirtualMachineProxy proxy = proxyQueue.take();
         if (!(proxy instanceof VirtualMachineProxyImpl)) {
             throw new RuntimeException("Can't connect to VirtualMachine");
         }
@@ -41,10 +54,10 @@ public class MyPanel extends BorderLayoutPanel {
     public MyPanel(Project project) {
         this.project = project;
 
-        countLabel = new JBLabel("Press Magic Button when breakpoint reached");
+        countLabel = new JBLabel("");
         addToBottom(countLabel);
 
-        ClassesTableModel model = new ClassesTableModel();
+        model = new ClassesTableModel();
         table = new JBTable(model);
         table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
         JScrollPane scroll = ScrollPaneFactory.createScrollPane(table, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
@@ -58,87 +71,118 @@ public class MyPanel extends BorderLayoutPanel {
                 table.setSize(e.getComponent().getWidth(), e.getComponent().getHeight());
             }
         });
+    }
 
-        // outputs current classes
-        JButton button = new JButton("Magic button");
-        button.addActionListener((ActionEvent e) -> {
-            model.clear();
-            XDebugSession debugSession = XDebuggerManager.getInstance(project).getCurrentSession();
-            if (debugSession != null) {
-                DebugProcessImpl debugProcess = (DebugProcessImpl) DebuggerManager
-                        .getInstance(project)
-                        .getDebugProcess(
-                                debugSession
-                                        .getDebugProcess()
-                                        .getProcessHandler()
-                        );
-                new SwingWorker<Void, Void>() {
-                    private VirtualMachineProxy proxy;
+    public void debugSessionStart(XDebugSession session) {
+        XDebugSession debugSession = XDebuggerManager.getInstance(project).getCurrentSession();
+        if (debugSession != null) {
+            DebugProcessImpl debugProcess = (DebugProcessImpl) DebuggerManager
+                .getInstance(project)
+                .getDebugProcess(
+                    debugSession
+                        .getDebugProcess()
+                        .getProcessHandler()
+                );
+            debugActive = true;
+            new Thread(() -> {
+                VirtualMachine vm;
+                try {
+                    vm = getVM(debugProcess);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                    return;
+                }
+                enableInstanceCreationMonitoring2(debugSession, vm);
 
-                    @Override
-                    protected Void doInBackground() throws Exception {
-                        proxy = proxyQueue.take();
-                        return null;
-                    }
+                SwingUtilities.invokeLater(() -> {
+                    (new DoubleClickListener() {
+                        protected boolean onDoubleClick(MouseEvent event) {
+                            handleClassSelection(debugProcess, vm,
+                                classInstances.get(table.getSelectedRow()).type, creationMonitoring.getCreationPlaces());
+                            return true;
+                        }
+                    }).installOn(table);
+                });
 
-                    @Override
-                    protected void done() {
-                        VirtualMachine vm = getVM(proxy);
-                        List<ReferenceType> classes =
-                                vm
-                                .allClasses();
-                        List<ClassInstance> classInstances = new ArrayList<>();
-                        countLabel.setText(classes.size() + " classes");
-                        classes.forEach(o -> {
-                            long count = vm.instanceCounts(Collections.singletonList(o))[0];
-                            classInstances.add(new ClassInstance(o, count));
-//                            System.out.println(o.name() + "-" + vm.instanceCounts(Collections.singletonList(o))[0]);
-                        });
+                while (debugActive) {
+                    try {
+                        List<ReferenceType> classes = vm.allClasses();
+                        long[] counts = vm.instanceCounts(classes);
+                        Iterator<ReferenceType> iterator = classes.iterator();
+                        classInstances = new ArrayList<>();
+                        for (long count : counts) {
+                            classInstances.add(new ClassInstance(iterator.next(), count));
+                        }
                         Collections.sort(classInstances);
+                        model.clear();
                         classInstances.forEach(classInstance -> {
-                            System.out.println(classInstance);
                             model.add(classInstance.type.name(), classInstance.count);
                         });
                         table.updateUI();
+                        String plural = classes.size() % 10 == 1 ? "class" : "classes";
+                        countLabel.setText(classes.size() + " loaded " + plural);
+                        Thread.sleep(UPDATE_TIME);
+//                        break;
+                    } catch (VMDisconnectedException e) {
+                        break;
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                        break;
+                    }
+                }
+            }).start();
+        }
+    }
 
-                        vm.allThreads().forEach(threadReference -> {
-                            System.out.println("\nThread " + threadReference.name());
-                            try {
-                                List<StackFrame> frames = threadReference.frames();
-                                frames.forEach(frame -> {
-                                    try {
-                                        System.out.println(" " + frame.location().declaringType() + " "
-                                            + frame.location().sourceName() + " " + frame.location().sourcePath()
-                                            + " " + frame.location().method().name() + " " +
-                                            + frame.location().lineNumber());
-                                        frame
-                                            .visibleVariables()
-                                            .forEach(
-                                                variable ->
-                                                    System.out.println("  "
-                                                        + variable.typeName()
-                                                        + " " + variable.name()
-                                                        + " = " + frame.getValue(variable))
-                                            );
-                                    } catch (AbsentInformationException e1) {
-                                        System.out.println("  n/a");
-                                    }
-                                });
-                            } catch (IncompatibleThreadStateException e1) {
-                                System.out.println(" n/a    ");
-                            }
-                        });
-                    }
-                }.execute();
-                debugProcess.getManagerThread().invoke(new DebuggerCommandImpl() {
-                    @Override
-                    protected void action() throws Exception {
-                        proxyQueue.add(debugProcess.getVirtualMachineProxy());
-                    }
-                });
-            }
-        });
-        addToBottom(button);
+    public void debugSessionStop(XDebugSession session) {
+        debugActive = false;
+    }
+
+    private void enableInstanceCreationMonitoring2(XDebugSession debugSession, VirtualMachine vm) {
+        creationMonitoring = new CreationMonitoring(debugSession, vm);
+    }
+
+    private void enableInstanceCreationMonitoring(VirtualMachine vm) {
+//        MethodEntryRequest request = vm.eventRequestManager().createMethodEntryRequest();
+//        request.enable();
+//        new Thread(() -> {
+//            EventQueue eventQueue = vm.eventQueue();
+//            while (debugActive) {
+//                try {
+//                    EventSet events = eventQueue.remove();
+//                    EventIterator eventIterator = events.eventIterator();
+//                    while (eventIterator.hasNext()) {
+//                        Event event = eventIterator.nextEvent();
+//                        if (event instanceof MethodEntryEvent) {
+//                            MethodEntryEvent entryEvent = (MethodEntryEvent) event;
+//                            Method method = entryEvent.method();
+//                            if (method.isConstructor()) {
+//                                ThreadReference thread = entryEvent.thread();
+//                                ObjectReference object = thread.frame(0).thisObject();
+//                                if (!creationPlaces.containsKey(object)) {
+//                                    Location creationPlace = thread.frame(1).location();
+//                                    creationPlaces.put(object, creationPlace);
+////                                    System.out.println(creationPlace.sourceName() + ":"
+////                                        + creationPlace.lineNumber());
+//                                }
+//                            }
+//                        }
+//                    }
+//                    events.resume();
+//                } catch (VMDisconnectedException e) {
+//                    return;
+//                } catch (Exception e) {
+//                    throw new RuntimeException(e);
+//                }
+//            }
+//        }).start();
+    }
+
+    private void handleClassSelection(DebugProcessImpl process,
+                                      VirtualMachine virtualMachine,
+                                      ReferenceType ref,
+                                      Map<ObjectReference, Location> locationMap) {
+        new InstancesWindow(process, virtualMachine, ref, locationMap).show();
     }
 
     class ClassInstance implements Comparable<ClassInstance> {
