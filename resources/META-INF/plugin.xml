@@ -24,15 +24,24 @@
   <depends>com.intellij.modules.lang</depends>
   -->
 
+  <actions>
+    <!-- Add your actions here -->
+
+    <action class="net.falsetrue.heapwalker.FindObjectAction" id="Debugger.FalseTrue.ShowObjectInHeap"
+            text="Show in heap">
+      <add-to-group group-id="XDebugger.Watches.Tree.Popup" anchor="last"/>
+      <add-to-group group-id="XDebugger.Variables.Tree.Toolbar" anchor="last"/>
+      <add-to-group group-id="XDebugger.Variables.Tree.Popup" anchor="last"/>
+      <add-to-group group-id="XDebugger.Evaluation.Dialog.Tree.Popup" anchor="last"/>
+      <add-to-group group-id="XDebugger.Inspect.Tree.Popup" anchor="last"/>
+    </action>
+  </actions>
+
   <extensions defaultExtensionNs="com.intellij">
-    <toolWindow id="GS Debugger" anchor="right" secondary="false"
+    <toolWindow id="Memory content" anchor="bottom" secondary="false"
                 factoryClass="net.falsetrue.heapwalker.WindowFactory" />
 
     <projectService serviceImplementation="net.falsetrue.heapwalker.MyStateService" />
   </extensions>
-
-  <actions>
-    <!-- Add your actions here -->
-  </actions>
 
 </idea-plugin>

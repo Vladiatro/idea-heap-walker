@@ -5,7 +5,9 @@ import com.intellij.debugger.engine.DebugProcessImpl;
 import com.intellij.debugger.engine.events.DebuggerCommandImpl;
 import com.intellij.debugger.engine.jdi.VirtualMachineProxy;
 import com.intellij.debugger.jdi.VirtualMachineProxyImpl;
+import com.intellij.openapi.actionSystem.IdeActions;
 import com.intellij.openapi.project.Project;
+import com.intellij.ui.ClickListener;
 import com.intellij.ui.DoubleClickListener;
 import com.intellij.ui.ScrollPaneFactory;
 import com.intellij.ui.components.JBLabel;
@@ -18,19 +20,22 @@ import net.falsetrue.heapwalker.breakpoints.CreationMonitoring;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
+import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.MouseEvent;
 import java.util.*;
+import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
 public class MyPanel extends BorderLayoutPanel {
-    private static final int UPDATE_TIME = 7000;
+    private static final int UPDATE_TIME = 4000;
     private final ClassesTableModel model;
 
     private JBLabel countLabel;
     private JBTable table;
+    private InstancesView instancesView;
     private final Project project;
     private volatile List<ClassInstance> classInstances;
     private volatile boolean debugActive = false;
@@ -59,22 +64,21 @@ public class MyPanel extends BorderLayoutPanel {
 
         model = new ClassesTableModel();
         table = new JBTable(model);
-        table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
-        JScrollPane scroll = ScrollPaneFactory.createScrollPane(table, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN);
+        table.getColumnModel().getColumn(0).setMaxWidth(900);
+//        XDebuggerManager.getInstance(project).getCurrentSession().getUI().
+        table.getColumnModel().getColumn(1).setMaxWidth(300);
+        JScrollPane tableScroll = ScrollPaneFactory.createScrollPane(table, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 
-//        add(table);
-        addToCenter(scroll);
+        instancesView = new InstancesView(project);
+        JScrollPane instancesScroll = ScrollPaneFactory.createScrollPane(instancesView,
+            ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 
-        addComponentListener(new ComponentAdapter() {
-            @Override
-            public void componentResized(ComponentEvent e) {
-                table.setSize(e.getComponent().getWidth(), e.getComponent().getHeight());
-            }
-        });
+        addToLeft(tableScroll);
+        addToCenter(instancesScroll);
     }
 
-    public void debugSessionStart(XDebugSession session) {
-        XDebugSession debugSession = XDebuggerManager.getInstance(project).getCurrentSession();
+    public void debugSessionStart(XDebugSession debugSession) {
         if (debugSession != null) {
             DebugProcessImpl debugProcess = (DebugProcessImpl) DebuggerManager
                 .getInstance(project)
@@ -84,10 +88,12 @@ public class MyPanel extends BorderLayoutPanel {
                         .getProcessHandler()
                 );
             debugActive = true;
+            instancesView.setDebugProcess(debugProcess);
             new Thread(() -> {
                 VirtualMachine vm;
                 try {
                     vm = getVM(debugProcess);
+                    instancesView.setVirtualMachine(vm);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                     return;
@@ -95,34 +101,38 @@ public class MyPanel extends BorderLayoutPanel {
                 enableInstanceCreationMonitoring2(debugSession, vm);
 
                 SwingUtilities.invokeLater(() -> {
-                    (new DoubleClickListener() {
-                        protected boolean onDoubleClick(MouseEvent event) {
-                            handleClassSelection(debugProcess, vm,
-                                classInstances.get(table.getSelectedRow()).type, creationMonitoring.getCreationPlaces());
-                            return true;
+                    (new ClickListener() {
+                        @Override
+                        public boolean onClick(@NotNull MouseEvent event, int clickCount) {
+                            if (clickCount == 1) {
+                                handleClassSelection(classInstances.get(table.getSelectedRow()).type);
+                                return true;
+                            }
+                            return false;
                         }
                     }).installOn(table);
                 });
 
                 while (debugActive) {
                     try {
-                        List<ReferenceType> classes = vm.allClasses();
-                        long[] counts = vm.instanceCounts(classes);
-                        Iterator<ReferenceType> iterator = classes.iterator();
-                        classInstances = new ArrayList<>();
-                        for (long count : counts) {
-                            classInstances.add(new ClassInstance(iterator.next(), count));
-                        }
-                        Collections.sort(classInstances);
-                        model.clear();
-                        classInstances.forEach(classInstance -> {
-                            model.add(classInstance.type.name(), classInstance.count);
-                        });
-                        table.updateUI();
-                        String plural = classes.size() % 10 == 1 ? "class" : "classes";
-                        countLabel.setText(classes.size() + " loaded " + plural);
-                        Thread.sleep(UPDATE_TIME);
-//                        break;
+//                        synchronized (MyPanel.this) {
+                            List<ReferenceType> classes = vm.allClasses();
+                            long[] counts = vm.instanceCounts(classes);
+                            Iterator<ReferenceType> iterator = classes.iterator();
+                            classInstances = new ArrayList<>();
+                            for (long count : counts) {
+                                classInstances.add(new ClassInstance(iterator.next(), count));
+                            }
+                            Collections.sort(classInstances);
+                            model.clear();
+                            classInstances.forEach(classInstance -> {
+                                model.add(classInstance.type.name(), classInstance.count);
+                            });
+                            table.updateUI();
+                            String plural = classes.size() % 10 == 1 ? "class" : "classes";
+                            countLabel.setText(classes.size() + " loaded " + plural);
+                            Thread.sleep(UPDATE_TIME);
+//                        }
                     } catch (VMDisconnectedException e) {
                         break;
                     } catch (InterruptedException e) {
@@ -142,47 +152,23 @@ public class MyPanel extends BorderLayoutPanel {
         creationMonitoring = new CreationMonitoring(debugSession, vm);
     }
 
-    private void enableInstanceCreationMonitoring(VirtualMachine vm) {
-//        MethodEntryRequest request = vm.eventRequestManager().createMethodEntryRequest();
-//        request.enable();
-//        new Thread(() -> {
-//            EventQueue eventQueue = vm.eventQueue();
-//            while (debugActive) {
-//                try {
-//                    EventSet events = eventQueue.remove();
-//                    EventIterator eventIterator = events.eventIterator();
-//                    while (eventIterator.hasNext()) {
-//                        Event event = eventIterator.nextEvent();
-//                        if (event instanceof MethodEntryEvent) {
-//                            MethodEntryEvent entryEvent = (MethodEntryEvent) event;
-//                            Method method = entryEvent.method();
-//                            if (method.isConstructor()) {
-//                                ThreadReference thread = entryEvent.thread();
-//                                ObjectReference object = thread.frame(0).thisObject();
-//                                if (!creationPlaces.containsKey(object)) {
-//                                    Location creationPlace = thread.frame(1).location();
-//                                    creationPlaces.put(object, creationPlace);
-////                                    System.out.println(creationPlace.sourceName() + ":"
-////                                        + creationPlace.lineNumber());
-//                                }
-//                            }
-//                        }
-//                    }
-//                    events.resume();
-//                } catch (VMDisconnectedException e) {
-//                    return;
-//                } catch (Exception e) {
-//                    throw new RuntimeException(e);
-//                }
-//            }
-//        }).start();
+    private void handleClassSelection(ReferenceType referenceType) {
+        instancesView.update(referenceType, creationMonitoring.getCreationPlaces(), null);
     }
 
-    private void handleClassSelection(DebugProcessImpl process,
-                                      VirtualMachine virtualMachine,
-                                      ReferenceType ref,
-                                      Map<ObjectReference, Location> locationMap) {
-        new InstancesWindow(process, virtualMachine, ref, locationMap).show();
+    public void showReference(ObjectReference reference) {
+//        synchronized (this) {
+            ReferenceType referenceType = reference.referenceType();
+            for (int i = 0; i < classInstances.size(); i++) {
+                if (classInstances.get(i).type.equals(referenceType)) {
+                    table.clearSelection();
+                    table.addRowSelectionInterval(i, i);
+                    table.scrollRectToVisible(table.getCellRect(i, 0, true));
+                    instancesView.update(referenceType, creationMonitoring.getCreationPlaces(), reference);
+                    break;
+                }
+            }
+//        }
     }
 
     class ClassInstance implements Comparable<ClassInstance> {

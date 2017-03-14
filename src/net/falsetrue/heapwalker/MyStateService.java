@@ -35,6 +35,10 @@ public class MyStateService implements PersistentStateComponent<MyStateService.S
         this.panel = panel;
     }
 
+    public MyPanel getPanel() {
+        return panel;
+    }
+
     public static class State {
 
     }
