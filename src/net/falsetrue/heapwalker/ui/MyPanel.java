@@ -1,4 +1,4 @@
-package net.falsetrue.heapwalker;
+package net.falsetrue.heapwalker.ui;
 
 import com.intellij.debugger.DebuggerManager;
 import com.intellij.debugger.engine.DebugProcessImpl;

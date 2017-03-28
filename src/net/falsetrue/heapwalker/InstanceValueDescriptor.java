@@ -12,6 +12,7 @@ import com.intellij.psi.PsiExpression;
 import com.sun.jdi.ArrayReference;
 import com.sun.jdi.ObjectReference;
 import com.sun.jdi.Value;
+import net.falsetrue.heapwalker.util.NameUtils;
 
 public class InstanceValueDescriptor extends ValueDescriptorImpl {
     public InstanceValueDescriptor(Project project, Value value) {

@@ -12,7 +12,7 @@ public class TimeManager {
 
     public long getTime() {
         if (paused) {
-            return pauseTime;
+            return pauseTime - from;
         }
         return System.currentTimeMillis() - from;
     }

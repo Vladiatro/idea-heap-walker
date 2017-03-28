@@ -1,4 +1,4 @@
-package net.falsetrue.heapwalker;
+package net.falsetrue.heapwalker.ui;
 
 import javax.swing.table.AbstractTableModel;
 import java.util.ArrayList;

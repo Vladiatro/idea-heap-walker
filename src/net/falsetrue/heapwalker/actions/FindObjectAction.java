@@ -1,4 +1,4 @@
-package net.falsetrue.heapwalker;
+package net.falsetrue.heapwalker.actions;
 
 import com.intellij.debugger.engine.JavaValue;
 import com.intellij.openapi.actionSystem.AnActionEvent;
@@ -9,6 +9,7 @@ import com.intellij.xdebugger.impl.ui.tree.nodes.XValueNodeImpl;
 import com.sun.jdi.Value;
 import com.sun.tools.jdi.ArrayReferenceImpl;
 import com.sun.tools.jdi.ObjectReferenceImpl;
+import net.falsetrue.heapwalker.MyStateService;
 import org.jetbrains.annotations.NotNull;
 
 /**

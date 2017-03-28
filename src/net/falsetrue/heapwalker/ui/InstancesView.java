@@ -1,4 +1,4 @@
-package net.falsetrue.heapwalker;
+package net.falsetrue.heapwalker.ui;
 
 import com.intellij.debugger.engine.DebugProcess;
 import com.intellij.debugger.engine.DebugProcessImpl;
@@ -39,6 +39,8 @@ import com.sun.jdi.Location;
 import com.sun.jdi.ObjectReference;
 import com.sun.jdi.ReferenceType;
 import com.sun.jdi.VirtualMachine;
+import net.falsetrue.heapwalker.InstanceJavaValue;
+import net.falsetrue.heapwalker.InstanceValueDescriptor;
 import net.falsetrue.heapwalker.actions.TrackUsageAction;
 import net.falsetrue.heapwalker.monitorings.AccessMonitoring;
 import net.falsetrue.heapwalker.util.IndicatorTreeRenderer;

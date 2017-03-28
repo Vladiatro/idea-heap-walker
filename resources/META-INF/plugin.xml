@@ -27,7 +27,7 @@
   <actions>
     <!-- Add your actions here -->
 
-    <action class="net.falsetrue.heapwalker.FindObjectAction" id="Debugger.FalseTrue.ShowObjectInHeap"
+    <action class="net.falsetrue.heapwalker.actions.FindObjectAction" id="Debugger.FalseTrue.ShowObjectInHeap"
             text="Show in heap">
       <add-to-group group-id="XDebugger.Watches.Tree.Popup" anchor="last"/>
       <add-to-group group-id="XDebugger.Variables.Tree.Toolbar" anchor="last"/>
