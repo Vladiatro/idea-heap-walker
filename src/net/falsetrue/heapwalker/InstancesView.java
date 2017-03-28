@@ -1,6 +1,9 @@
 package net.falsetrue.heapwalker;
 
+import com.intellij.debugger.engine.DebugProcess;
 import com.intellij.debugger.engine.DebugProcessImpl;
+import com.intellij.debugger.engine.DebugProcessListener;
+import com.intellij.debugger.engine.SuspendContext;
 import com.intellij.debugger.engine.evaluation.EvaluationContext;
 import com.intellij.debugger.engine.evaluation.EvaluationContextImpl;
 import com.intellij.debugger.engine.events.DebuggerCommandImpl;
@@ -10,11 +13,16 @@ import com.intellij.debugger.ui.impl.watch.MessageDescriptor;
 import com.intellij.debugger.ui.impl.watch.NodeManagerImpl;
 import com.intellij.debugger.ui.tree.NodeDescriptor;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.actionSystem.ActionGroup;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.ActionToolbar;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Pair;
 import com.intellij.ui.components.JBPanel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.components.BorderLayoutPanel;
 import com.intellij.xdebugger.XDebugSession;
 import com.intellij.xdebugger.XDebuggerManager;
 import com.intellij.xdebugger.frame.*;
@@ -31,17 +39,25 @@ import com.sun.jdi.Location;
 import com.sun.jdi.ObjectReference;
 import com.sun.jdi.ReferenceType;
 import com.sun.jdi.VirtualMachine;
+import net.falsetrue.heapwalker.actions.TrackUsageAction;
+import net.falsetrue.heapwalker.monitorings.AccessMonitoring;
+import net.falsetrue.heapwalker.util.IndicatorTreeRenderer;
+import net.falsetrue.heapwalker.util.ObjectTimeMap;
+import net.falsetrue.heapwalker.util.TimeManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.java.debugger.JavaDebuggerEditorsProvider;
 
 import javax.swing.*;
+import javax.swing.tree.TreeCellRenderer;
 import java.awt.*;
 import java.util.*;
 import java.util.List;
 
-public class InstancesView extends JBPanel implements Disposable {
+public class InstancesView extends BorderLayoutPanel implements Disposable {
     private final XDebuggerTree instancesTree;
+    private final TrackUsageAction trackUsageAction;
     private MyNodeManager myNodeManager;
+    private ActionManager myActionManager;
     private Map<ObjectReference, Location> creationPlaces;
     private Project project;
     private XDebugSession debugSession;
@@ -50,17 +66,26 @@ public class InstancesView extends JBPanel implements Disposable {
     private DebugProcessImpl debugProcess;
     private MyNodeManager nodeManager;
     private int selected = -1;
+    private TimeManager timeManager;
+    private ObjectTimeMap objectTimeMap;
 
-    public InstancesView(Project project) {
-        super(new BorderLayout(0, 0));
-        this.myNodeManager = new MyNodeManager(project);
+    private DebugProcessListener listener;
+
+    public InstancesView(Project project, TimeManager timeManager) {
+        myNodeManager = new MyNodeManager(project);
         this.project = project;
+        this.timeManager = timeManager;
         nodeManager = new MyNodeManager(project);
         JavaDebuggerEditorsProvider editorsProvider = new JavaDebuggerEditorsProvider();
         XValueMarkers markers = this.getValueMarkers();
         XDebuggerTreeCreator treeCreator = new XDebuggerTreeCreator(project, editorsProvider,
             null, markers);
         instancesTree = (XDebuggerTree)treeCreator.createTree(this.getTreeRootDescriptor());
+        objectTimeMap = new ObjectTimeMap();
+        if (!(instancesTree.getCellRenderer() instanceof IndicatorTreeRenderer)) {
+            instancesTree.setCellRenderer(new IndicatorTreeRenderer(instancesTree.getCellRenderer(), objectTimeMap,
+                timeManager));
+        }
         instancesTree.setRootVisible(false);
         instancesTree.getRoot().setLeaf(false);
         instancesTree.setExpandableItemsEnabled(true);
@@ -76,7 +101,15 @@ public class InstancesView extends JBPanel implements Disposable {
                 }
             }
         });
-        this.add(treeScrollPane, "Center");
+
+        myActionManager = ActionManager.getInstance();
+        DefaultActionGroup actionGroup = new DefaultActionGroup();
+        trackUsageAction = new TrackUsageAction();
+        actionGroup.add(trackUsageAction);
+        ActionToolbar tb = myActionManager.createActionToolbar("InstancesBar", actionGroup, false);
+        tb.setTargetComponent(this);
+        addToLeft(tb.getComponent());
+        addToCenter(treeScrollPane);
     }
 
     private XValueMarkers<?, ?> getValueMarkers() {
@@ -110,6 +143,22 @@ public class InstancesView extends JBPanel implements Disposable {
 
     public void setDebugProcess(DebugProcessImpl debugProcess) {
         this.debugProcess = debugProcess;
+        if (listener != null) {
+            debugProcess.removeDebugProcessListener(listener);
+        }
+        debugProcess.addDebugProcessListener(listener = new DebugProcessListener() {
+            @Override
+            public void paused(SuspendContext suspendContext) {
+                timeManager.pause();
+                SwingUtilities.invokeLater(instancesTree::updateUI);
+            }
+
+            @Override
+            public void resumed(SuspendContext suspendContext) {
+                timeManager.resume();
+                SwingUtilities.invokeLater(instancesTree::updateUI);
+            }
+        });
     }
 
     public void update(ReferenceType referenceType,
@@ -118,6 +167,7 @@ public class InstancesView extends JBPanel implements Disposable {
         this.referenceType = referenceType;
         this.creationPlaces = creationPlaces;
         debugSession = debugProcess.getSession().getXDebugSession();
+        trackUsageAction.setReferenceType(objectTimeMap, debugSession, referenceType, timeManager);
         if (instancesTree != null && instancesTree.getRoot() != null) {
             instancesTree.getRoot().clearChildren();
         }
@@ -153,7 +203,7 @@ public class InstancesView extends JBPanel implements Disposable {
                     for (ObjectReference instance : instances) {
                         InstanceValueDescriptor valueDescriptor = new InstanceValueDescriptor(project, instance);
                         list.add(InstanceJavaValue.create(valueDescriptor, evaluationContext, nodeManager,
-                            creationPlaces.get(instance)));
+                            creationPlaces.get(instance), instance));
                         if (instance.equals(reference)) {
                             selected = i;
                         }

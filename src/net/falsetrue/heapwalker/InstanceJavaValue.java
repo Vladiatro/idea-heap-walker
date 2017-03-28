@@ -28,13 +28,16 @@ public class InstanceJavaValue extends XNamedValue {
     private JavaValue javaValue;
     private Location creationPlace;
     private PsiClass psiClass;
+    private ObjectReference objectReference;
 
     private InstanceJavaValue(JavaValue javaValue,
+                              ObjectReference instance,
                                 Location creationPlace) {
         super(javaValue.getName());
         this.project = javaValue.getProject();
         this.javaValue = javaValue;
         this.creationPlace = creationPlace;
+        objectReference = instance;
     }
 
     private InstanceJavaValue(Project project,
@@ -43,6 +46,11 @@ public class InstanceJavaValue extends XNamedValue {
         super(instance.toString());
         this.project = project;
         this.creationPlace = creationPlace;
+        this.objectReference = instance;
+    }
+
+    public ObjectReference getObjectReference() {
+        return objectReference;
     }
 
     @Override
@@ -153,9 +161,10 @@ public class InstanceJavaValue extends XNamedValue {
     public static InstanceJavaValue create(ValueDescriptorImpl valueDescriptor,
                                            EvaluationContextImpl evaluationContext,
                                            NodeManagerImpl nodeManager,
-                                           Location creationPlace) {
+                                           Location creationPlace,
+                                           ObjectReference instance) {
         JavaValue javaValue = new JavaValueImpl(valueDescriptor, evaluationContext, nodeManager);
-        return new InstanceJavaValue(javaValue, creationPlace);
+        return new InstanceJavaValue(javaValue, instance, creationPlace);
     }
 
     public static InstanceJavaValue create(Project project,

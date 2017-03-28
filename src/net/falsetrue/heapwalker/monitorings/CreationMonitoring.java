@@ -1,4 +1,4 @@
-package net.falsetrue.heapwalker.breakpoints;
+package net.falsetrue.heapwalker.monitorings;
 
 import com.intellij.debugger.DebuggerManager;
 import com.intellij.debugger.engine.DebugProcess;

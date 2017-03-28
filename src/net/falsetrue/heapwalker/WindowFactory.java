@@ -10,6 +10,7 @@ import com.intellij.xdebugger.XDebugProcess;
 import com.intellij.xdebugger.XDebugSession;
 import com.intellij.xdebugger.XDebuggerManager;
 import com.intellij.xdebugger.XDebuggerManagerListener;
+import net.falsetrue.heapwalker.util.TimeManager;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
@@ -17,7 +18,8 @@ import javax.swing.*;
 public class WindowFactory implements ToolWindowFactory {
     @Override
     public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
-        MyPanel panel = new MyPanel(project);
+        TimeManager timeManager = new TimeManager();
+        MyPanel panel = new MyPanel(project, timeManager);
         MyStateService.getInstance(project).setPanel(panel);
         Content content = ContentFactory.SERVICE.getInstance().createContent(panel, "", false);
         toolWindow.getContentManager().addContent(content);
@@ -29,6 +31,7 @@ public class WindowFactory implements ToolWindowFactory {
                 SwingUtilities.invokeLater(() -> {
                     XDebugSession session = xDebugProcess.getSession();
                     panel.debugSessionStart(session);
+                    timeManager.start();
                 });
             }
 

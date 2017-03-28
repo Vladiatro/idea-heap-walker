@@ -35,6 +35,9 @@
       <add-to-group group-id="XDebugger.Evaluation.Dialog.Tree.Popup" anchor="last"/>
       <add-to-group group-id="XDebugger.Inspect.Tree.Popup" anchor="last"/>
     </action>
+      <action id="net.falsetrue.heapwalker.actions.TrackUsageAction"
+              class="net.falsetrue.heapwalker.actions.TrackUsageAction" text="TrackUsageAction"
+              description="Start tracking instances usage"/>
   </actions>
 
   <extensions defaultExtensionNs="com.intellij">

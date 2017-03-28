@@ -5,24 +5,19 @@ import com.intellij.debugger.engine.DebugProcessImpl;
 import com.intellij.debugger.engine.events.DebuggerCommandImpl;
 import com.intellij.debugger.engine.jdi.VirtualMachineProxy;
 import com.intellij.debugger.jdi.VirtualMachineProxyImpl;
-import com.intellij.openapi.actionSystem.IdeActions;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.ClickListener;
-import com.intellij.ui.DoubleClickListener;
 import com.intellij.ui.ScrollPaneFactory;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.ui.components.BorderLayoutPanel;
 import com.intellij.xdebugger.XDebugSession;
-import com.intellij.xdebugger.XDebuggerManager;
 import com.sun.jdi.*;
-import net.falsetrue.heapwalker.breakpoints.CreationMonitoring;
+import net.falsetrue.heapwalker.monitorings.CreationMonitoring;
+import net.falsetrue.heapwalker.util.TimeManager;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
-import java.awt.*;
-import java.awt.event.ComponentAdapter;
-import java.awt.event.ComponentEvent;
 import java.awt.event.MouseEvent;
 import java.util.*;
 import java.util.List;
@@ -56,11 +51,11 @@ public class MyPanel extends BorderLayoutPanel {
         return ((VirtualMachineProxyImpl) proxy).getVirtualMachine();
     }
 
-    public MyPanel(Project project) {
+    public MyPanel(Project project, TimeManager timeManager) {
         this.project = project;
 
         countLabel = new JBLabel("");
-        addToBottom(countLabel);
+//        addToBottom(countLabel);
 
         model = new ClassesTableModel();
         table = new JBTable(model);
@@ -70,12 +65,12 @@ public class MyPanel extends BorderLayoutPanel {
         table.getColumnModel().getColumn(1).setMaxWidth(300);
         JScrollPane tableScroll = ScrollPaneFactory.createScrollPane(table, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 
-        instancesView = new InstancesView(project);
-        JScrollPane instancesScroll = ScrollPaneFactory.createScrollPane(instancesView,
-            ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
+        instancesView = new InstancesView(project, timeManager);
+//        JScrollPane instancesScroll = ScrollPaneFactory.createScrollPane(instancesView,
+//            ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 
         addToLeft(tableScroll);
-        addToCenter(instancesScroll);
+        addToCenter(instancesView);
     }
 
     public void debugSessionStart(XDebugSession debugSession) {
