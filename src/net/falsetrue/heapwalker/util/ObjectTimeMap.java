@@ -24,6 +24,9 @@ public class ObjectTimeMap {
     }
 
     public void put(ObjectReference reference, long time) {
+        if (reference == null) {
+            return;
+        }
         int pos = (int) (reference.uniqueID() % TABLE_SIZE);
         Node node = table[pos];
         while (node != null) {

@@ -44,7 +44,7 @@ public class IndicatorTreeRenderer implements TreeCellRenderer {
                 color = getColor((int) (time / 100));
             }
             YoPanel panel = new YoPanel();
-            panel.add(new Indicator(tree.getRowHeight() * 2 / 3, color));
+            panel.add(new Indicator(component.getHeight(), color));
             panel.add(component);
             return panel;
         }
@@ -68,9 +68,11 @@ public class IndicatorTreeRenderer implements TreeCellRenderer {
         }
     }
 
-    private class Indicator extends JBPanel {
-        public Indicator(int height, Color color) {
-            setSize(height, height);
+    private class Indicator extends JPanel {
+        public Indicator(int size, Color color) {
+            JLabel label = new JLabel("    ");
+            label.setFont(new Font("Sans-Serif", Font.PLAIN, 10));
+            add(label);
             setBackground(color);
         }
     }
