@@ -2,6 +2,8 @@ package net.falsetrue.heapwalker.ui;
 
 import com.intellij.debugger.DebuggerManager;
 import com.intellij.debugger.engine.DebugProcessImpl;
+import com.intellij.debugger.engine.DebugProcessListener;
+import com.intellij.debugger.engine.SuspendContext;
 import com.intellij.debugger.engine.events.DebuggerCommandImpl;
 import com.intellij.debugger.engine.jdi.VirtualMachineProxy;
 import com.intellij.debugger.jdi.VirtualMachineProxyImpl;
@@ -32,9 +34,12 @@ public class MyPanel extends BorderLayoutPanel {
     private JBTable table;
     private InstancesView instancesView;
     private final Project project;
+    private TimeManager timeManager;
     private volatile List<ClassInstance> classInstances;
     private volatile boolean debugActive = false;
     private CreationMonitoring creationMonitoring;
+
+    private DebugProcessListener listener;
 
     private VirtualMachine getVM(DebugProcessImpl debugProcess) throws InterruptedException {
         BlockingQueue<VirtualMachineProxy> proxyQueue = new ArrayBlockingQueue<>(1);
@@ -53,6 +58,7 @@ public class MyPanel extends BorderLayoutPanel {
 
     public MyPanel(Project project, TimeManager timeManager) {
         this.project = project;
+        this.timeManager = timeManager;
 
         countLabel = new JBLabel("");
 //        addToBottom(countLabel);
@@ -83,6 +89,22 @@ public class MyPanel extends BorderLayoutPanel {
                         .getProcessHandler()
                 );
             debugActive = true;
+            if (listener != null) {
+                debugProcess.removeDebugProcessListener(listener);
+            }
+            debugProcess.addDebugProcessListener(listener = new DebugProcessListener() {
+                @Override
+                public void paused(SuspendContext suspendContext) {
+                    timeManager.pause();
+                    handleClassSelection(classInstances.get(table.getSelectedRow()).type);
+                }
+
+                @Override
+                public void resumed(SuspendContext suspendContext) {
+                    timeManager.resume();
+                    handleClassSelection(classInstances.get(table.getSelectedRow()).type);
+                }
+            });
             instancesView.setDebugProcess(debugProcess);
             new Thread(() -> {
                 VirtualMachine vm;

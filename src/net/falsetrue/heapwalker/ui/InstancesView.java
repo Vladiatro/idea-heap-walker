@@ -71,8 +71,6 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     private TimeManager timeManager;
     private ObjectTimeMap objectTimeMap;
 
-    private DebugProcessListener listener;
-
     public InstancesView(Project project, TimeManager timeManager) {
         myNodeManager = new MyNodeManager(project);
         this.project = project;
@@ -145,22 +143,6 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
 
     public void setDebugProcess(DebugProcessImpl debugProcess) {
         this.debugProcess = debugProcess;
-        if (listener != null) {
-            debugProcess.removeDebugProcessListener(listener);
-        }
-        debugProcess.addDebugProcessListener(listener = new DebugProcessListener() {
-            @Override
-            public void paused(SuspendContext suspendContext) {
-                timeManager.pause();
-                SwingUtilities.invokeLater(instancesTree::updateUI);
-            }
-
-            @Override
-            public void resumed(SuspendContext suspendContext) {
-                timeManager.resume();
-                SwingUtilities.invokeLater(instancesTree::updateUI);
-            }
-        });
     }
 
     public void update(ReferenceType referenceType,
