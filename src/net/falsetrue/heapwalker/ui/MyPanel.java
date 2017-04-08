@@ -23,8 +23,9 @@ import javax.swing.*;
 import java.awt.event.MouseEvent;
 import java.util.*;
 import java.util.List;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.*;
+
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
 public class MyPanel extends BorderLayoutPanel {
     private static final int UPDATE_TIME = 4000;
@@ -40,16 +41,24 @@ public class MyPanel extends BorderLayoutPanel {
     private CreationMonitoring creationMonitoring;
 
     private DebugProcessListener listener;
+    private ScheduledFuture<?> updaterHandle;
 
     private VirtualMachine getVM(DebugProcessImpl debugProcess) throws InterruptedException {
-        BlockingQueue<VirtualMachineProxy> proxyQueue = new ArrayBlockingQueue<>(1);
+        BlockingQueue<ProxyResult> proxyQueue = new ArrayBlockingQueue<>(1);
         debugProcess.getManagerThread().invoke(new DebuggerCommandImpl() {
             @Override
             protected void action() throws Exception {
-                proxyQueue.add(debugProcess.getVirtualMachineProxy());
+                try {
+                    proxyQueue.add(new ProxyResult(debugProcess.getVirtualMachineProxy()));
+                } catch (Exception e) {
+                    proxyQueue.put(new ProxyResult(null));
+                }
             }
         });
-        VirtualMachineProxy proxy = proxyQueue.take();
+        VirtualMachineProxy proxy = proxyQueue.take().proxy;
+        if (proxy == null) {
+            return null;
+        }
         if (!(proxy instanceof VirtualMachineProxyImpl)) {
             throw new RuntimeException("Can't connect to VirtualMachine");
         }
@@ -88,28 +97,14 @@ public class MyPanel extends BorderLayoutPanel {
                         .getDebugProcess()
                         .getProcessHandler()
                 );
-            debugActive = true;
-            if (listener != null) {
-                debugProcess.removeDebugProcessListener(listener);
-            }
-            debugProcess.addDebugProcessListener(listener = new DebugProcessListener() {
-                @Override
-                public void paused(SuspendContext suspendContext) {
-                    timeManager.pause();
-                    handleClassSelection(classInstances.get(table.getSelectedRow()).type);
-                }
 
-                @Override
-                public void resumed(SuspendContext suspendContext) {
-                    timeManager.resume();
-                    handleClassSelection(classInstances.get(table.getSelectedRow()).type);
-                }
-            });
-            instancesView.setDebugProcess(debugProcess);
-            new Thread(() -> {
+//            new Thread(() -> {
                 VirtualMachine vm;
                 try {
                     vm = getVM(debugProcess);
+                    if (vm == null) {
+                        return;
+                    }
                     instancesView.setVirtualMachine(vm);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
@@ -130,39 +125,67 @@ public class MyPanel extends BorderLayoutPanel {
                     }).installOn(table);
                 });
 
-                while (debugActive) {
-                    try {
-//                        synchronized (MyPanel.this) {
-                            List<ReferenceType> classes = vm.allClasses();
-                            long[] counts = vm.instanceCounts(classes);
-                            Iterator<ReferenceType> iterator = classes.iterator();
-                            classInstances = new ArrayList<>();
-                            for (long count : counts) {
-                                classInstances.add(new ClassInstance(iterator.next(), count));
-                            }
-                            Collections.sort(classInstances);
-                            model.clear();
-                            classInstances.forEach(classInstance -> {
-                                model.add(classInstance.type.name(), classInstance.count);
-                            });
-                            table.updateUI();
-                            String plural = classes.size() % 10 == 1 ? "class" : "classes";
-                            countLabel.setText(classes.size() + " loaded " + plural);
-                            Thread.sleep(UPDATE_TIME);
-//                        }
-                    } catch (VMDisconnectedException e) {
-                        break;
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                        break;
+            debugActive = true;
+            if (listener != null) {
+                debugProcess.removeDebugProcessListener(listener);
+            }
+            debugProcess.addDebugProcessListener(listener = new DebugProcessListener() {
+                @Override
+                public void paused(SuspendContext suspendContext) {
+                    timeManager.pause();
+                    if (debugActive) {
+                        handleClassSelection(classInstances.get(table.getSelectedRow()).type);
                     }
                 }
-            }).start();
+
+                @Override
+                public void resumed(SuspendContext suspendContext) {
+                    timeManager.resume();
+                    handleClassSelection(classInstances.get(table.getSelectedRow()).type);
+                }
+            });
+            instancesView.setDebugProcess(debugProcess);
+
+            ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+            updaterHandle = scheduler.scheduleAtFixedRate(() -> {
+                try {
+//                        synchronized (MyPanel.this) {
+                    List<ReferenceType> classes = vm.allClasses();
+                    long[] counts = vm.instanceCounts(classes);
+                    Iterator<ReferenceType> iterator = classes.iterator();
+                    classInstances = new ArrayList<>();
+                    for (long count : counts) {
+                        classInstances.add(new ClassInstance(iterator.next(), count));
+                    }
+                    Collections.sort(classInstances);
+                    model.clear();
+                    classInstances.forEach(classInstance -> {
+                        model.add(classInstance.type.name(), classInstance.count);
+                    });
+                    SwingUtilities.invokeLater(() -> table.updateUI());
+                    String plural = classes.size() % 10 == 1 ? "class" : "classes";
+                    countLabel.setText(classes.size() + " loaded " + plural);
+//                    Thread.sleep(UPDATE_TIME);
+//                        }
+                } catch (VMDisconnectedException e) {
+                    updaterHandle.cancel(false);
+                }
+//                catch (InterruptedException e) {
+//                    e.printStackTrace();
+//
+//                }
+            }, UPDATE_TIME, UPDATE_TIME, MILLISECONDS);
+//            }).start();
         }
     }
 
     public void debugSessionStop(XDebugSession session) {
         debugActive = false;
+        if (updaterHandle != null) {
+            updaterHandle.cancel(false);
+            SwingUtilities.invokeLater(model::clear);
+            instancesView.clear();
+        }
     }
 
     private void enableInstanceCreationMonitoring2(XDebugSession debugSession, VirtualMachine vm) {
@@ -205,6 +228,14 @@ public class MyPanel extends BorderLayoutPanel {
         @Override
         public String toString() {
             return type.name() + " - " + count;
+        }
+    }
+
+    class ProxyResult {
+        private VirtualMachineProxy proxy;
+
+        public ProxyResult(VirtualMachineProxy proxy) {
+            this.proxy = proxy;
         }
     }
 }

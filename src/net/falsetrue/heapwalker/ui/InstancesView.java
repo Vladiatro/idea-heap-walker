@@ -143,6 +143,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
 
     public void setDebugProcess(DebugProcessImpl debugProcess) {
         this.debugProcess = debugProcess;
+        objectTimeMap.clear();
     }
 
     public void update(ReferenceType referenceType,
@@ -153,9 +154,13 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         debugSession = debugProcess.getSession().getXDebugSession();
         trackUsageAction.setReferenceType(objectTimeMap, debugSession, referenceType, timeManager);
         if (instancesTree != null && instancesTree.getRoot() != null) {
-            instancesTree.getRoot().clearChildren();
+            SwingUtilities.invokeLater(() -> instancesTree.getRoot().clearChildren());
         }
         updateInstances(reference, true);
+    }
+
+    public void clear() {
+        SwingUtilities.invokeLater(instancesTree.getRoot()::clearChildren);
     }
 
     private void updateInstances(ObjectReference reference, boolean recompute) {

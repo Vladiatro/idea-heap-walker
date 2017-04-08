@@ -1,6 +1,7 @@
 package net.falsetrue.heapwalker.util;
 
 import com.intellij.ui.components.JBPanel;
+import com.intellij.ui.components.panels.HorizontalLayout;
 import com.intellij.xdebugger.impl.ui.tree.XValueExtendedPresentation;
 import com.intellij.xdebugger.impl.ui.tree.nodes.XValueNodeImpl;
 import net.falsetrue.heapwalker.InstanceJavaValue;
@@ -44,7 +45,7 @@ public class IndicatorTreeRenderer implements TreeCellRenderer {
                 color = getColor((int) (time / 100));
             }
             YoPanel panel = new YoPanel();
-            panel.add(new Indicator(component.getHeight(), color));
+            panel.add(new Indicator(color));
             panel.add(component);
             return panel;
         }
@@ -63,13 +64,13 @@ public class IndicatorTreeRenderer implements TreeCellRenderer {
 
     private class YoPanel extends JPanel {
         public YoPanel() {
-            super(new FlowLayout(FlowLayout.CENTER, 0, 0));
+            super(new HorizontalLayout(0, 0));
             getInsets().set(0, 0, 0, 0);
         }
     }
 
     private class Indicator extends JPanel {
-        public Indicator(int size, Color color) {
+        public Indicator(Color color) {
             JLabel label = new JLabel("    ");
             label.setFont(new Font("Sans-Serif", Font.PLAIN, 10));
             add(label);

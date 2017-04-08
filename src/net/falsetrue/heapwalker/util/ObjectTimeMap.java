@@ -7,10 +7,6 @@ public class ObjectTimeMap {
 
     private Node[] table;
 
-    public ObjectTimeMap() {
-        table = new Node[TABLE_SIZE];
-    }
-
     private class Node {
         final long id;
         long time;
@@ -49,5 +45,9 @@ public class ObjectTimeMap {
             node = node.next;
         }
         return -1;
+    }
+
+    public void clear() {
+        table = new Node[TABLE_SIZE];
     }
 }
