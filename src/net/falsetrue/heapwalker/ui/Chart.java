@@ -14,8 +14,10 @@ public class Chart extends JPanel {
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
-
         if (data != null) {
+            ((Graphics2D) g).setRenderingHint(
+                RenderingHints.KEY_ANTIALIASING,
+                RenderingHints.VALUE_ANTIALIAS_ON);
             int sum = data.stream().mapToInt(Item::getCount).sum();
             int lastAngle = 0;
             int size = Math.min(getWidth(), getHeight());

@@ -19,6 +19,7 @@ import com.intellij.openapi.actionSystem.ActionToolbar;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Pair;
+import com.intellij.ui.JBSplitter;
 import com.intellij.ui.components.JBPanel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
@@ -123,8 +124,11 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         ActionToolbar tb = myActionManager.createActionToolbar("InstancesBar", actionGroup, false);
         tb.setTargetComponent(this);
         addToLeft(tb.getComponent());
-        addToRight(chart);
-        addToCenter(treeScrollPane);
+
+        JBSplitter splitter = new JBSplitter(0.6f);
+        splitter.setFirstComponent(treeScrollPane);
+        splitter.setSecondComponent(chart);
+        addToCenter(splitter);
     }
 
     private XValueMarkers<?, ?> getValueMarkers() {

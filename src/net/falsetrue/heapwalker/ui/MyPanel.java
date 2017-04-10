@@ -9,6 +9,7 @@ import com.intellij.debugger.engine.jdi.VirtualMachineProxy;
 import com.intellij.debugger.jdi.VirtualMachineProxyImpl;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.ClickListener;
+import com.intellij.ui.JBSplitter;
 import com.intellij.ui.ScrollPaneFactory;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.table.JBTable;
@@ -27,7 +28,7 @@ import java.util.concurrent.*;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
-public class MyPanel extends BorderLayoutPanel {
+public class MyPanel extends JBSplitter {
     private static final int UPDATE_TIME = 4000;
     private final ClassesTableModel model;
 
@@ -66,6 +67,7 @@ public class MyPanel extends BorderLayoutPanel {
     }
 
     public MyPanel(Project project, TimeManager timeManager) {
+        super(0.3f);
         this.project = project;
         this.timeManager = timeManager;
 
@@ -84,8 +86,8 @@ public class MyPanel extends BorderLayoutPanel {
 //        JScrollPane instancesScroll = ScrollPaneFactory.createScrollPane(instancesView,
 //            ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 
-        addToLeft(tableScroll);
-        addToCenter(instancesView);
+        setFirstComponent(tableScroll);
+        setSecondComponent(instancesView);
     }
 
     public void debugSessionStart(XDebugSession debugSession) {
@@ -98,31 +100,30 @@ public class MyPanel extends BorderLayoutPanel {
                         .getProcessHandler()
                 );
 
-//            new Thread(() -> {
-                VirtualMachine vm;
-                try {
-                    vm = getVM(debugProcess);
-                    if (vm == null) {
-                        return;
-                    }
-                    instancesView.setVirtualMachine(vm);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+            VirtualMachine vm;
+            try {
+                vm = getVM(debugProcess);
+                if (vm == null) {
                     return;
                 }
-                enableInstanceCreationMonitoring2(debugSession, vm);
+                instancesView.setVirtualMachine(vm);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                return;
+            }
+            enableInstanceCreationMonitoring2(debugSession, vm);
 
 //                SwingUtilities.invokeLater(() -> {
-                (new ClickListener() {
-                    @Override
-                    public boolean onClick(@NotNull MouseEvent event, int clickCount) {
-                        if (clickCount == 1) {
-                            handleClassSelection(classInstances.get(table.getSelectedRow()).type);
-                            return true;
-                        }
-                        return false;
+            (new ClickListener() {
+                @Override
+                public boolean onClick(@NotNull MouseEvent event, int clickCount) {
+                    if (clickCount == 1) {
+                        handleClassSelection(classInstances.get(table.getSelectedRow()).type);
+                        return true;
                     }
-                }).installOn(table);
+                    return false;
+                }
+            }).installOn(table);
 //                });
 
             debugActive = true;
@@ -149,7 +150,6 @@ public class MyPanel extends BorderLayoutPanel {
             ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
             updaterHandle = scheduler.scheduleAtFixedRate(() -> {
                 try {
-//                        synchronized (MyPanel.this) {
                     List<ReferenceType> classes = vm.allClasses();
                     long[] counts = vm.instanceCounts(classes);
                     Iterator<ReferenceType> iterator = classes.iterator();
@@ -165,17 +165,10 @@ public class MyPanel extends BorderLayoutPanel {
                     SwingUtilities.invokeLater(() -> table.updateUI());
                     String plural = classes.size() % 10 == 1 ? "class" : "classes";
                     countLabel.setText(classes.size() + " loaded " + plural);
-//                    Thread.sleep(UPDATE_TIME);
-//                        }
                 } catch (VMDisconnectedException e) {
                     updaterHandle.cancel(false);
                 }
-//                catch (InterruptedException e) {
-//                    e.printStackTrace();
-//
-//                }
-            }, UPDATE_TIME, UPDATE_TIME, MILLISECONDS);
-//            }).start();
+            }, 0, UPDATE_TIME, MILLISECONDS);
         }
     }
 
