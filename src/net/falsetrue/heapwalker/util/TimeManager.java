@@ -1,8 +1,6 @@
 package net.falsetrue.heapwalker.util;
 
 public class TimeManager {
-    public static final int BLACK_AGE = 90000;
-
     private long from;
     private long pauseTime;
     private boolean paused = true;

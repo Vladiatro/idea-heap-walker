@@ -1,10 +1,12 @@
 package net.falsetrue.heapwalker.util;
 
+import com.intellij.openapi.project.Project;
 import com.intellij.ui.components.JBPanel;
 import com.intellij.ui.components.panels.HorizontalLayout;
 import com.intellij.xdebugger.impl.ui.tree.XValueExtendedPresentation;
 import com.intellij.xdebugger.impl.ui.tree.nodes.XValueNodeImpl;
 import net.falsetrue.heapwalker.InstanceJavaValue;
+import net.falsetrue.heapwalker.MyStateService;
 import net.falsetrue.heapwalker.ui.Chart;
 
 import javax.swing.*;
@@ -12,16 +14,17 @@ import javax.swing.tree.TreeCellRenderer;
 import javax.swing.tree.TreePath;
 import java.awt.*;
 
-import static net.falsetrue.heapwalker.util.TimeManager.BLACK_AGE;
-
 public class IndicatorTreeRenderer implements TreeCellRenderer {
+    private Project project;
     private TreeCellRenderer standardRenderer;
     private ObjectTimeMap objectTimeMap;
     private TimeManager timeManager;
 
-    public IndicatorTreeRenderer(TreeCellRenderer standardRenderer,
+    public IndicatorTreeRenderer(Project project,
+                                 TreeCellRenderer standardRenderer,
                                  ObjectTimeMap objectTimeMap,
                                  TimeManager timeManager) {
+        this.project = project;
         this.standardRenderer = standardRenderer;
         this.objectTimeMap = objectTimeMap;
         this.timeManager = timeManager;
@@ -30,7 +33,6 @@ public class IndicatorTreeRenderer implements TreeCellRenderer {
     @Override
     public Component getTreeCellRendererComponent(JTree tree, Object value, boolean selected,
                                                   boolean expanded, boolean leaf, int row, boolean hasFocus) {
-
         Component component = standardRenderer.getTreeCellRendererComponent(tree, value, selected, expanded,
             leaf, row, hasFocus);
         TreePath path = tree.getPathForRow(row);
@@ -39,11 +41,12 @@ public class IndicatorTreeRenderer implements TreeCellRenderer {
             InstanceJavaValue javaValue = (InstanceJavaValue) ((XValueNodeImpl) value).getValueContainer();
             long time = objectTimeMap.get(javaValue.getObjectReference());
             Color color;
+            int blackAge = MyStateService.getInstance(project).getBlackAgeSeconds() * 1000;
             if (time == -1) {
                 color = Color.BLACK;
             } else {
                 time = timeManager.getTime() - time;
-                color = getColor((int) (time * 765 / BLACK_AGE));
+                color = getColor((int) (time * 765 / blackAge));
             }
             YoPanel panel = new YoPanel();
             panel.add(new Indicator(color));

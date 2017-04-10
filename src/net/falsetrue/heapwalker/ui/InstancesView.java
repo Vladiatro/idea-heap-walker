@@ -42,6 +42,7 @@ import com.sun.jdi.ReferenceType;
 import com.sun.jdi.VirtualMachine;
 import net.falsetrue.heapwalker.InstanceJavaValue;
 import net.falsetrue.heapwalker.InstanceValueDescriptor;
+import net.falsetrue.heapwalker.MyStateService;
 import net.falsetrue.heapwalker.actions.TrackUsageAction;
 import net.falsetrue.heapwalker.monitorings.AccessMonitoring;
 import net.falsetrue.heapwalker.monitorings.CreationMonitoring;
@@ -56,8 +57,6 @@ import javax.swing.tree.TreeCellRenderer;
 import java.awt.*;
 import java.util.*;
 import java.util.List;
-
-import static net.falsetrue.heapwalker.util.TimeManager.BLACK_AGE;
 
 @SuppressWarnings("UseJBColor")
 public class InstancesView extends BorderLayoutPanel implements Disposable {
@@ -98,8 +97,8 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         objectTimeMap = new ObjectTimeMap();
         chart = new Chart();
         if (!(instancesTree.getCellRenderer() instanceof IndicatorTreeRenderer)) {
-            instancesTree.setCellRenderer(new IndicatorTreeRenderer(instancesTree.getCellRenderer(), objectTimeMap,
-                timeManager));
+            instancesTree.setCellRenderer(new IndicatorTreeRenderer(project,
+                instancesTree.getCellRenderer(), objectTimeMap, timeManager));
         }
         instancesTree.setRootVisible(false);
         instancesTree.getRoot().setLeaf(false);
@@ -189,6 +188,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         if (!recompute && instancesTree.getRoot().getChildCount() > 0) {
             return;
         }
+        int blackAge = MyStateService.getInstance(project).getBlackAgeSeconds() * 1000;
         debugProcess.getManagerThread().invoke(new DebuggerCommandImpl() {
             @Override
             protected void action() throws Exception {
@@ -204,19 +204,22 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
                         long time = objectTimeMap.get(instance);
                         if (time > -1) {
                             time = timeManager.getTime() - objectTimeMap.get(instance);
-                            counts[Math.min(6, (int) (time * 6 / BLACK_AGE))]++;
+                            counts[Math.min(6, (int) (time * 6 / blackAge))]++;
                         } else {
                             counts[6]++;
                         }
                     }
-                    chartData.add(new Chart.Item("", counts[0], COLOR_0)); // @todo
-                    chartData.add(new Chart.Item("", counts[1], COLOR_1));
-                    chartData.add(new Chart.Item("", counts[2], COLOR_2));
-                    chartData.add(new Chart.Item("", counts[3], COLOR_3));
-                    chartData.add(new Chart.Item("", counts[4], COLOR_4));
-                    chartData.add(new Chart.Item("", counts[5], COLOR_5));
-                    chartData.add(new Chart.Item("", counts[6], COLOR_6));
+                    String[] labels = createLabels();
+                    chartData.add(new Chart.Item(labels[0], counts[0], COLOR_0));
+                    chartData.add(new Chart.Item(labels[1], counts[1], COLOR_1));
+                    chartData.add(new Chart.Item(labels[2], counts[2], COLOR_2));
+                    chartData.add(new Chart.Item(labels[3], counts[3], COLOR_3));
+                    chartData.add(new Chart.Item(labels[4], counts[4], COLOR_4));
+                    chartData.add(new Chart.Item(labels[5], counts[5], COLOR_5));
+                    chartData.add(new Chart.Item(labels[6], counts[6], COLOR_6));
                     chart.setData(chartData);
+                } else {
+                    chart.clear();
                 }
                 if (evaluationContext == null) {
                     int i = 0;
@@ -243,6 +246,60 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
             }
         });
 
+    }
+
+    private String[] createLabels() {
+        int blackAge = MyStateService.getInstance(project).getBlackAgeSeconds();
+        String[] result = new String[7];
+        for (int i = 0; i < 6; i++) {
+            int first = blackAge * i / 6;
+            int second = blackAge * (i + 1) / 6;
+            if (first == 0) {
+                if (second < 60) {
+                    result[i] = "<" + seconds(second);
+                } else {
+                    result[i] = "<" + minsSecs(second);
+                }
+            } else if (first < 60 && second < 60) {
+                result[i] = first + "-" + second + " seconds";
+            } else if (first % 60 == 0 && second % 60 == 0) {
+                result[i] = (first / 60) + "-" + (second / 60) + " minutes";
+            } else {
+                result[i] = minsSecs(first) + " - " + minsSecs(second);
+            }
+        }
+        if (blackAge < 60) {
+            result[6] = ">" + seconds(blackAge) + " or n/a";
+        } else if (blackAge % 60 == 0) {
+            result[6] = ">" + minutes(blackAge) + " or n/a";
+        } else {
+            result[6] = ">" + minsSecs(blackAge) + " or n/a";
+        }
+        return result;
+    }
+
+    private String seconds(int seconds) {
+        if (seconds % 10 == 1) {
+            return seconds + " second";
+        }
+        return seconds + " seconds";
+    }
+
+    private String minutes(int seconds) {
+        int minutes = seconds / 60;
+        if (minutes % 10 == 1) {
+            return minutes + " minute";
+        }
+        return minutes + " minutes";
+    }
+
+    private String minsSecs(int seconds) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(seconds / 60).append(" min");
+        if (seconds % 60 != 0) {
+            builder.append(" ").append(seconds % 60).append(" sec");
+        }
+        return builder.toString();
     }
 
     @Override

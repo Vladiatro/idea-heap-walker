@@ -25,6 +25,7 @@ public class Chart extends JPanel {
                 int x = e.getX() - chartSize / 2;
                 int y = e.getY() - chartSize / 2;
                 int newHovered = -1;
+                setToolTipText(null);
                 if (x * x + y * y <= chartSize * chartSize) {
                     int angle = (int) (180 * Math.atan2(-y, x) / Math.PI);
                     if (angle < 0) {
@@ -40,6 +41,7 @@ public class Chart extends JPanel {
                     if (newHovered == -1) {
                         newHovered = data.size() - 1;
                     }
+                    setToolTipText(data.get(newHovered).label + ": " + data.get(newHovered).count);
                 }
                 if (newHovered != hovered) {
                     hovered = newHovered;
@@ -51,6 +53,7 @@ public class Chart extends JPanel {
             @Override
             public void mouseExited(MouseEvent e) {
                 hovered = -1;
+                setToolTipText(null);
                 updateUI();
             }
         });

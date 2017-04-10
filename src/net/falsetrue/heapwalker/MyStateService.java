@@ -16,20 +16,31 @@ import org.jetbrains.annotations.Nullable;
 )
 public class MyStateService implements PersistentStateComponent<MyStateService.State> {
     private MyPanel panel;
+    private int blackAgeSeconds = 60;
 
     @Nullable
     @Override
     public State getState() {
-        return null;
+        State state = new State();
+        state.setBlackAgeSeconds(blackAgeSeconds);
+        return state;
     }
 
     @Override
     public void loadState(State state) {
-
+        blackAgeSeconds = state.getBlackAgeSeconds();
     }
 
     public static MyStateService getInstance(@NotNull Project project) {
         return ServiceManager.getService(project, MyStateService.class);
+    }
+
+    public int getBlackAgeSeconds() {
+        return blackAgeSeconds;
+    }
+
+    public void setBlackAgeSeconds(int blackAgeSeconds) {
+        this.blackAgeSeconds = blackAgeSeconds;
     }
 
     public void setPanel(@Nullable MyPanel panel) {
@@ -41,6 +52,15 @@ public class MyStateService implements PersistentStateComponent<MyStateService.S
     }
 
     public static class State {
+        private int blackAgeSeconds;
 
+        int getBlackAgeSeconds() {
+            return blackAgeSeconds;
+        }
+
+        void setBlackAgeSeconds(int blackAgeSeconds) {
+            this.blackAgeSeconds = blackAgeSeconds;
+        }
     }
+
 }

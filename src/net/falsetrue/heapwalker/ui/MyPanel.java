@@ -134,7 +134,7 @@ public class MyPanel extends JBSplitter {
                 @Override
                 public void paused(SuspendContext suspendContext) {
                     timeManager.pause();
-                    if (classInstances.get(table.getSelectedRow()) != null) {
+                    if (table.getSelectedRow() != -1 && classInstances.get(table.getSelectedRow()) != null) {
                         handleClassSelection(classInstances.get(table.getSelectedRow()).type);
                     }
                 }
@@ -142,7 +142,9 @@ public class MyPanel extends JBSplitter {
                 @Override
                 public void resumed(SuspendContext suspendContext) {
                     timeManager.resume();
-                    handleClassSelection(classInstances.get(table.getSelectedRow()).type);
+                    if (table.getSelectedRow() != -1 && classInstances.get(table.getSelectedRow()) != null) {
+                        handleClassSelection(classInstances.get(table.getSelectedRow()).type);
+                    }
                 }
             });
             instancesView.setDebugProcess(debugProcess);
