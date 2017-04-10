@@ -112,18 +112,18 @@ public class MyPanel extends BorderLayoutPanel {
                 }
                 enableInstanceCreationMonitoring2(debugSession, vm);
 
-                SwingUtilities.invokeLater(() -> {
-                    (new ClickListener() {
-                        @Override
-                        public boolean onClick(@NotNull MouseEvent event, int clickCount) {
-                            if (clickCount == 1) {
-                                handleClassSelection(classInstances.get(table.getSelectedRow()).type);
-                                return true;
-                            }
-                            return false;
+//                SwingUtilities.invokeLater(() -> {
+                (new ClickListener() {
+                    @Override
+                    public boolean onClick(@NotNull MouseEvent event, int clickCount) {
+                        if (clickCount == 1) {
+                            handleClassSelection(classInstances.get(table.getSelectedRow()).type);
+                            return true;
                         }
-                    }).installOn(table);
-                });
+                        return false;
+                    }
+                }).installOn(table);
+//                });
 
             debugActive = true;
             if (listener != null) {
@@ -133,7 +133,7 @@ public class MyPanel extends BorderLayoutPanel {
                 @Override
                 public void paused(SuspendContext suspendContext) {
                     timeManager.pause();
-                    if (debugActive) {
+                    if (classInstances.get(table.getSelectedRow()) != null) {
                         handleClassSelection(classInstances.get(table.getSelectedRow()).type);
                     }
                 }

@@ -43,6 +43,7 @@ import net.falsetrue.heapwalker.InstanceJavaValue;
 import net.falsetrue.heapwalker.InstanceValueDescriptor;
 import net.falsetrue.heapwalker.actions.TrackUsageAction;
 import net.falsetrue.heapwalker.monitorings.AccessMonitoring;
+import net.falsetrue.heapwalker.monitorings.CreationMonitoring;
 import net.falsetrue.heapwalker.util.IndicatorTreeRenderer;
 import net.falsetrue.heapwalker.util.ObjectTimeMap;
 import net.falsetrue.heapwalker.util.TimeManager;
@@ -55,7 +56,18 @@ import java.awt.*;
 import java.util.*;
 import java.util.List;
 
+import static net.falsetrue.heapwalker.util.TimeManager.BLACK_AGE;
+
+@SuppressWarnings("UseJBColor")
 public class InstancesView extends BorderLayoutPanel implements Disposable {
+    private static final Color COLOR_0 = new Color(0, 255, 0);
+    private static final Color COLOR_1 = new Color(128, 255, 0);
+    private static final Color COLOR_2 = new Color(255, 255, 0);
+    private static final Color COLOR_3 = new Color(255, 128, 0);
+    private static final Color COLOR_4 = new Color(255, 0, 0);
+    private static final Color COLOR_5 = new Color(128, 0, 0);
+    private static final Color COLOR_6 = new Color(0, 0, 0);
+
     private final XDebuggerTree instancesTree;
     private final TrackUsageAction trackUsageAction;
     private MyNodeManager myNodeManager;
@@ -70,6 +82,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     private int selected = -1;
     private TimeManager timeManager;
     private ObjectTimeMap objectTimeMap;
+    private Chart chart;
 
     public InstancesView(Project project, TimeManager timeManager) {
         myNodeManager = new MyNodeManager(project);
@@ -82,6 +95,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
             null, markers);
         instancesTree = (XDebuggerTree)treeCreator.createTree(this.getTreeRootDescriptor());
         objectTimeMap = new ObjectTimeMap();
+        chart = new Chart();
         if (!(instancesTree.getCellRenderer() instanceof IndicatorTreeRenderer)) {
             instancesTree.setCellRenderer(new IndicatorTreeRenderer(instancesTree.getCellRenderer(), objectTimeMap,
                 timeManager));
@@ -109,6 +123,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         ActionToolbar tb = myActionManager.createActionToolbar("InstancesBar", actionGroup, false);
         tb.setTargetComponent(this);
         addToLeft(tb.getComponent());
+        addToRight(chart);
         addToCenter(treeScrollPane);
     }
 
@@ -178,6 +193,27 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
 
                 selected = -1;
                 XValueChildrenList list = new XValueChildrenList();
+                if (timeManager.isPaused() && trackUsageAction.isSelected()) {
+                    int[] counts = new int[7];
+                    List<Chart.Item> chartData = new ArrayList<>(7);
+                    for (ObjectReference instance : instances) {
+                        long time = objectTimeMap.get(instance);
+                        if (time > -1) {
+                            time = timeManager.getTime() - objectTimeMap.get(instance);
+                            counts[Math.min(6, (int) (time * 6 / BLACK_AGE))]++;
+                        } else {
+                            counts[6]++;
+                        }
+                    }
+                    chartData.add(new Chart.Item("", counts[0], COLOR_0)); // @todo
+                    chartData.add(new Chart.Item("", counts[1], COLOR_1));
+                    chartData.add(new Chart.Item("", counts[2], COLOR_2));
+                    chartData.add(new Chart.Item("", counts[3], COLOR_3));
+                    chartData.add(new Chart.Item("", counts[4], COLOR_4));
+                    chartData.add(new Chart.Item("", counts[5], COLOR_5));
+                    chartData.add(new Chart.Item("", counts[6], COLOR_6));
+                    chart.setData(chartData);
+                }
                 if (evaluationContext == null) {
                     int i = 0;
                     for (ObjectReference instance : instances) {

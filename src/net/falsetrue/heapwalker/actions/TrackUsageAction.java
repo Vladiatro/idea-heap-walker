@@ -42,6 +42,10 @@ public class TrackUsageAction extends ToggleAction {
         enabled = !(referenceType instanceof ArrayType);
     }
 
+    public boolean isSelected() {
+        return mySelected;
+    }
+
     @Override
     public boolean isSelected(AnActionEvent e) {
         return mySelected;

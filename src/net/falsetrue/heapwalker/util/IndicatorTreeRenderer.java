@@ -5,15 +5,16 @@ import com.intellij.ui.components.panels.HorizontalLayout;
 import com.intellij.xdebugger.impl.ui.tree.XValueExtendedPresentation;
 import com.intellij.xdebugger.impl.ui.tree.nodes.XValueNodeImpl;
 import net.falsetrue.heapwalker.InstanceJavaValue;
+import net.falsetrue.heapwalker.ui.Chart;
 
 import javax.swing.*;
 import javax.swing.tree.TreeCellRenderer;
 import javax.swing.tree.TreePath;
 import java.awt.*;
 
-public class IndicatorTreeRenderer implements TreeCellRenderer {
-    public static final int MAX_AGE = 255 * 3;
+import static net.falsetrue.heapwalker.util.TimeManager.BLACK_AGE;
 
+public class IndicatorTreeRenderer implements TreeCellRenderer {
     private TreeCellRenderer standardRenderer;
     private ObjectTimeMap objectTimeMap;
     private TimeManager timeManager;
@@ -42,7 +43,7 @@ public class IndicatorTreeRenderer implements TreeCellRenderer {
                 color = Color.BLACK;
             } else {
                 time = timeManager.getTime() - time;
-                color = getColor((int) (time / 100));
+                color = getColor((int) (time * 765 / BLACK_AGE));
             }
             YoPanel panel = new YoPanel();
             panel.add(new Indicator(color));
