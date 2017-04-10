@@ -20,8 +20,8 @@ import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Pair;
 import com.intellij.ui.JBSplitter;
-import com.intellij.ui.components.JBPanel;
-import com.intellij.ui.components.JBScrollPane;
+import com.intellij.ui.components.*;
+import com.intellij.ui.components.panels.VerticalLayout;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.components.BorderLayoutPanel;
 import com.intellij.xdebugger.XDebugSession;
@@ -95,7 +95,6 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
             null, markers);
         instancesTree = (XDebuggerTree)treeCreator.createTree(this.getTreeRootDescriptor());
         objectTimeMap = new ObjectTimeMap();
-        chart = new Chart();
         if (!(instancesTree.getCellRenderer() instanceof IndicatorTreeRenderer)) {
             instancesTree.setCellRenderer(new IndicatorTreeRenderer(project,
                 instancesTree.getCellRenderer(), objectTimeMap, timeManager));
@@ -126,8 +125,21 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
 
         JBSplitter splitter = new JBSplitter(0.6f);
         splitter.setFirstComponent(treeScrollPane);
-        splitter.setSecondComponent(chart);
+
+        JBTabbedPane tabs = new JBTabbedPane();
+        splitter.setSecondComponent(tabs);
         addToCenter(splitter);
+        insertUsageChart(tabs);
+    }
+
+    private void insertUsageChart(JBTabbedPane tabs) {
+        JPanel panel = new JPanel(new BorderLayout(0, 0));
+        BlackThresholdComboBox comboBox = new BlackThresholdComboBox(project);
+        comboBox.setChangeListener(this::updateChart);
+        chart = new Chart();
+        panel.add(comboBox, BorderLayout.NORTH);
+        panel.add(chart, BorderLayout.CENTER);
+        tabs.insertTab("Usage", null, panel, "Usage statistics", 0);
     }
 
     private XValueMarkers<?, ?> getValueMarkers() {
@@ -181,6 +193,47 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         SwingUtilities.invokeLater(instancesTree.getRoot()::clearChildren);
     }
 
+    private void updateChart(int blackAge) {
+        if (virtualMachine == null || debugProcess == null || debugProcess.isDetached() || referenceType == null) {
+            return;
+        }
+        debugProcess.getManagerThread().invoke(new DebuggerCommandImpl() {
+            @Override
+            protected void action() throws Exception {
+                List<ObjectReference> instances = referenceType.instances(0);
+                updateChart(instances, blackAge);
+            }
+        });
+    }
+
+    private void updateChart(List<ObjectReference> instances, int blackAge) {
+        if (timeManager.isPaused() && trackUsageAction.isSelected()) {
+            blackAge *= 1000;
+            int[] counts = new int[7];
+            List<Chart.Item> chartData = new ArrayList<>(7);
+            for (ObjectReference instance : instances) {
+                long time = objectTimeMap.get(instance);
+                if (time > -1) {
+                    time = timeManager.getTime() - objectTimeMap.get(instance);
+                    counts[Math.min(6, (int) (time * 6 / blackAge))]++;
+                } else {
+                    counts[6]++;
+                }
+            }
+            String[] labels = createLabels();
+            chartData.add(new Chart.Item(labels[0], counts[0], COLOR_0));
+            chartData.add(new Chart.Item(labels[1], counts[1], COLOR_1));
+            chartData.add(new Chart.Item(labels[2], counts[2], COLOR_2));
+            chartData.add(new Chart.Item(labels[3], counts[3], COLOR_3));
+            chartData.add(new Chart.Item(labels[4], counts[4], COLOR_4));
+            chartData.add(new Chart.Item(labels[5], counts[5], COLOR_5));
+            chartData.add(new Chart.Item(labels[6], counts[6], COLOR_6));
+            chart.setData(chartData);
+        } else {
+            chart.clear();
+        }
+    }
+
     private void updateInstances(ObjectReference reference, boolean recompute) {
         if (virtualMachine == null || debugProcess == null || debugProcess.isDetached()) {
             return;
@@ -188,7 +241,6 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         if (!recompute && instancesTree.getRoot().getChildCount() > 0) {
             return;
         }
-        int blackAge = MyStateService.getInstance(project).getBlackAgeSeconds() * 1000;
         debugProcess.getManagerThread().invoke(new DebuggerCommandImpl() {
             @Override
             protected void action() throws Exception {
@@ -197,30 +249,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
 
                 selected = -1;
                 XValueChildrenList list = new XValueChildrenList();
-                if (timeManager.isPaused() && trackUsageAction.isSelected()) {
-                    int[] counts = new int[7];
-                    List<Chart.Item> chartData = new ArrayList<>(7);
-                    for (ObjectReference instance : instances) {
-                        long time = objectTimeMap.get(instance);
-                        if (time > -1) {
-                            time = timeManager.getTime() - objectTimeMap.get(instance);
-                            counts[Math.min(6, (int) (time * 6 / blackAge))]++;
-                        } else {
-                            counts[6]++;
-                        }
-                    }
-                    String[] labels = createLabels();
-                    chartData.add(new Chart.Item(labels[0], counts[0], COLOR_0));
-                    chartData.add(new Chart.Item(labels[1], counts[1], COLOR_1));
-                    chartData.add(new Chart.Item(labels[2], counts[2], COLOR_2));
-                    chartData.add(new Chart.Item(labels[3], counts[3], COLOR_3));
-                    chartData.add(new Chart.Item(labels[4], counts[4], COLOR_4));
-                    chartData.add(new Chart.Item(labels[5], counts[5], COLOR_5));
-                    chartData.add(new Chart.Item(labels[6], counts[6], COLOR_6));
-                    chart.setData(chartData);
-                } else {
-                    chart.clear();
-                }
+                updateChart(instances, MyStateService.getInstance(project).getBlackAgeSeconds());
                 if (evaluationContext == null) {
                     int i = 0;
                     for (ObjectReference instance : instances) {
@@ -256,9 +285,9 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
             int second = blackAge * (i + 1) / 6;
             if (first == 0) {
                 if (second < 60) {
-                    result[i] = "<" + seconds(second);
+                    result[i] = "&lt;" + seconds(second);
                 } else {
-                    result[i] = "<" + minsSecs(second);
+                    result[i] = "&lt;" + minsSecs(second);
                 }
             } else if (first < 60 && second < 60) {
                 result[i] = first + "-" + second + " seconds";
@@ -295,9 +324,14 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
 
     private String minsSecs(int seconds) {
         StringBuilder builder = new StringBuilder();
-        builder.append(seconds / 60).append(" min");
+        if (seconds >= 60) {
+            builder.append(seconds / 60).append(" min");
+            if (seconds % 60 != 0) {
+                builder.append(" ");
+            }
+        }
         if (seconds % 60 != 0) {
-            builder.append(" ").append(seconds % 60).append(" sec");
+            builder.append(seconds % 60).append(" sec");
         }
         return builder.toString();
     }

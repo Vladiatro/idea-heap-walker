@@ -17,7 +17,7 @@ public class Chart extends JPanel {
     private int chartSize;
 
     public Chart() {
-        setPreferredSize(new Dimension(400, getHeight()));
+        super(new GridLayout(1, 1));
 
         addMouseMotionListener(new MouseMotionAdapter() {
             @Override
