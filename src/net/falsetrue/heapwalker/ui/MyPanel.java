@@ -153,6 +153,10 @@ public class MyPanel extends JBSplitter {
             updaterHandle = scheduler.scheduleAtFixedRate(() -> {
                 try {
                     List<ReferenceType> classes = vm.allClasses();
+                    ReferenceType selected = null;
+                    if (table.getSelectedRow() != -1) {
+                        selected = classInstances.get(table.getSelectedRow()).type;
+                    }
                     long[] counts = vm.instanceCounts(classes);
                     Iterator<ReferenceType> iterator = classes.iterator();
                     classInstances = new ArrayList<>();
@@ -161,9 +165,14 @@ public class MyPanel extends JBSplitter {
                     }
                     Collections.sort(classInstances);
                     model.clear();
-                    classInstances.forEach(classInstance -> {
+                    int index = 0;
+                    for (ClassInstance classInstance : classInstances) {
                         model.add(classInstance.type.name(), classInstance.count);
-                    });
+                        if (classInstance.type.equals(selected)) {
+                            table.setRowSelectionInterval(index, index);
+                        }
+                        index++;
+                    }
                     SwingUtilities.invokeLater(() -> table.updateUI());
                     String plural = classes.size() % 10 == 1 ? "class" : "classes";
                     countLabel.setText(classes.size() + " loaded " + plural);
