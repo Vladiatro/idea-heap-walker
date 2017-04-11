@@ -1,19 +1,15 @@
 package net.falsetrue.heapwalker.ui;
 
-import com.intellij.debugger.engine.DebugProcess;
 import com.intellij.debugger.engine.DebugProcessImpl;
-import com.intellij.debugger.engine.DebugProcessListener;
-import com.intellij.debugger.engine.SuspendContext;
+import com.intellij.debugger.engine.JavaValue;
 import com.intellij.debugger.engine.evaluation.EvaluationContext;
 import com.intellij.debugger.engine.evaluation.EvaluationContextImpl;
 import com.intellij.debugger.engine.events.DebuggerCommandImpl;
-import com.intellij.debugger.impl.DebuggerSession;
 import com.intellij.debugger.ui.impl.watch.DebuggerTreeNodeImpl;
 import com.intellij.debugger.ui.impl.watch.MessageDescriptor;
 import com.intellij.debugger.ui.impl.watch.NodeManagerImpl;
 import com.intellij.debugger.ui.tree.NodeDescriptor;
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.actionSystem.ActionGroup;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.ActionToolbar;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
@@ -21,18 +17,15 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Pair;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.components.*;
-import com.intellij.ui.components.panels.VerticalLayout;
-import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.components.BorderLayoutPanel;
 import com.intellij.xdebugger.XDebugSession;
-import com.intellij.xdebugger.XDebuggerManager;
 import com.intellij.xdebugger.frame.*;
 import com.intellij.xdebugger.impl.XDebugSessionImpl;
 import com.intellij.xdebugger.impl.evaluate.quick.XDebuggerTreeCreator;
+import com.intellij.xdebugger.impl.frame.XDebuggerFramesList;
 import com.intellij.xdebugger.impl.frame.XValueMarkers;
 import com.intellij.xdebugger.impl.ui.tree.XDebuggerTree;
 import com.intellij.xdebugger.impl.ui.tree.XDebuggerTreeListener;
-import com.intellij.xdebugger.impl.ui.tree.actions.XDebuggerTreeActionBase;
 import com.intellij.xdebugger.impl.ui.tree.nodes.XDebuggerTreeNode;
 import com.intellij.xdebugger.impl.ui.tree.nodes.XValueContainerNode;
 import com.intellij.xdebugger.impl.ui.tree.nodes.XValueNodeImpl;
@@ -44,16 +37,14 @@ import net.falsetrue.heapwalker.InstanceJavaValue;
 import net.falsetrue.heapwalker.InstanceValueDescriptor;
 import net.falsetrue.heapwalker.MyStateService;
 import net.falsetrue.heapwalker.actions.TrackUsageAction;
-import net.falsetrue.heapwalker.monitorings.AccessMonitoring;
-import net.falsetrue.heapwalker.monitorings.CreationMonitoring;
 import net.falsetrue.heapwalker.util.IndicatorTreeRenderer;
-import net.falsetrue.heapwalker.util.ObjectTimeMap;
+import net.falsetrue.heapwalker.util.map.ObjectMap;
+import net.falsetrue.heapwalker.util.map.ObjectTimeMap;
 import net.falsetrue.heapwalker.util.TimeManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.java.debugger.JavaDebuggerEditorsProvider;
 
 import javax.swing.*;
-import javax.swing.tree.TreeCellRenderer;
 import java.awt.*;
 import java.util.*;
 import java.util.List;
@@ -72,7 +63,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     private final TrackUsageAction trackUsageAction;
     private MyNodeManager myNodeManager;
     private ActionManager myActionManager;
-    private Map<ObjectReference, Location> creationPlaces;
+    private ObjectMap<List<Location>> creationPlaces;
     private Project project;
     private XDebugSession debugSession;
     private VirtualMachine virtualMachine;
@@ -83,6 +74,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     private TimeManager timeManager;
     private ObjectTimeMap objectTimeMap;
     private Chart chart;
+    private FrameList frameList;
 
     public InstancesView(Project project, TimeManager timeManager) {
         myNodeManager = new MyNodeManager(project);
@@ -93,7 +85,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         XValueMarkers markers = this.getValueMarkers();
         XDebuggerTreeCreator treeCreator = new XDebuggerTreeCreator(project, editorsProvider,
             null, markers);
-        instancesTree = (XDebuggerTree)treeCreator.createTree(this.getTreeRootDescriptor());
+        instancesTree = (XDebuggerTree)treeCreator.createTree(getTreeRootDescriptor());
         objectTimeMap = new ObjectTimeMap();
         if (!(instancesTree.getCellRenderer() instanceof IndicatorTreeRenderer)) {
             instancesTree.setCellRenderer(new IndicatorTreeRenderer(project,
@@ -114,6 +106,13 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
                 }
             }
         });
+        instancesTree.addTreeSelectionListener(e -> {
+            if (e.getPath().getPathCount() > 1 && e.getPath().getPathComponent(1) instanceof XValueNodeImpl) {
+                InstanceJavaValue javaValue = (InstanceJavaValue) ((XValueNodeImpl) e.getPath().getPathComponent(1))
+                    .getValueContainer();
+                frameList.setData(creationPlaces.get(javaValue.getObjectReference()));
+            }
+        });
 
         myActionManager = ActionManager.getInstance();
         DefaultActionGroup actionGroup = new DefaultActionGroup();
@@ -129,6 +128,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         JBTabbedPane tabs = new JBTabbedPane();
         splitter.setSecondComponent(tabs);
         addToCenter(splitter);
+        insertCreationStackPanel(tabs);
         insertUsageChart(tabs);
     }
 
@@ -140,6 +140,12 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         panel.add(comboBox, BorderLayout.NORTH);
         panel.add(chart, BorderLayout.CENTER);
         tabs.insertTab("Usage", null, panel, "Usage statistics", 0);
+    }
+
+    private void insertCreationStackPanel(JBTabbedPane tabs) {
+        frameList = new FrameList(project);
+        JBScrollPane scrollPane = new JBScrollPane(frameList);
+        tabs.insertTab("Stack", null, scrollPane, "Stack frame on object creation", 0);
     }
 
     private XValueMarkers<?, ?> getValueMarkers() {
@@ -177,7 +183,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     }
 
     public void update(ReferenceType referenceType,
-                       Map<ObjectReference, Location> creationPlaces,
+                       ObjectMap<List<Location>> creationPlaces,
                        ObjectReference reference) {
         this.referenceType = referenceType;
         this.creationPlaces = creationPlaces;
@@ -253,7 +259,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
                 if (evaluationContext == null) {
                     int i = 0;
                     for (ObjectReference instance : instances) {
-                        list.add(InstanceJavaValue.create(project, instance, creationPlaces.get(instance)));
+                        list.add(InstanceJavaValue.create(project, instance));
                         if (instance.equals(reference)) {
                             selected = i;
                         }
@@ -263,8 +269,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
                     int i = 0;
                     for (ObjectReference instance : instances) {
                         InstanceValueDescriptor valueDescriptor = new InstanceValueDescriptor(project, instance);
-                        list.add(InstanceJavaValue.create(valueDescriptor, evaluationContext, nodeManager,
-                            creationPlaces.get(instance), instance));
+                        list.add(InstanceJavaValue.create(valueDescriptor, evaluationContext, nodeManager, instance));
                         if (instance.equals(reference)) {
                             selected = i;
                         }

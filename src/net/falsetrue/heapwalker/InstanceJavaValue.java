@@ -26,46 +26,26 @@ import org.jetbrains.concurrency.Promise;
 public class InstanceJavaValue extends XNamedValue {
     private Project project;
     private JavaValue javaValue;
-    private Location creationPlace;
     private PsiClass psiClass;
     private ObjectReference objectReference;
 
     private InstanceJavaValue(JavaValue javaValue,
-                              ObjectReference instance,
-                                Location creationPlace) {
+                              ObjectReference instance) {
         super(javaValue.getName());
         this.project = javaValue.getProject();
         this.javaValue = javaValue;
-        this.creationPlace = creationPlace;
         objectReference = instance;
     }
 
     private InstanceJavaValue(Project project,
-                              ObjectReference instance,
-                              Location creationPlace) {
+                              ObjectReference instance) {
         super(instance.toString());
         this.project = project;
-        this.creationPlace = creationPlace;
         this.objectReference = instance;
     }
 
     public ObjectReference getObjectReference() {
         return objectReference;
-    }
-
-    @Override
-    public boolean canNavigateToSource() {
-        if (creationPlace == null) {
-            return false;
-        }
-        try {
-            creationPlace.sourceName();
-            psiClass = JavaPsiFacade.getInstance(project)
-                .findClass(creationPlace.declaringType().name(), GlobalSearchScope.everythingScope(project));
-            return psiClass != null;
-        } catch (AbsentInformationException e) {
-            return false;
-        }
     }
 
     @Override
@@ -83,34 +63,6 @@ public class InstanceJavaValue extends XNamedValue {
             javaValue.computeChildren(node);
         }
         super.computeChildren(node);
-    }
-
-    @Override
-    public void computeSourcePosition(@NotNull XNavigatable navigatable) {
-        navigatable.setSourcePosition(new XSourcePosition() {
-            @Override
-            public int getLine() {
-                return creationPlace.lineNumber() - 1;
-            }
-
-            @Override
-            public int getOffset() {
-                return 0;
-            }
-
-            @NotNull
-            @Override
-            public VirtualFile getFile() {
-                return psiClass.getContainingFile().getVirtualFile();
-            }
-
-            @NotNull
-            @Override
-            public Navigatable createNavigatable(@NotNull Project project) {
-                return new OpenFileDescriptor(project, psiClass.getContainingFile().getVirtualFile(),
-                    creationPlace.lineNumber() - 1, 0);
-            }
-        });
     }
 
     @Override
@@ -161,16 +113,14 @@ public class InstanceJavaValue extends XNamedValue {
     public static InstanceJavaValue create(ValueDescriptorImpl valueDescriptor,
                                            EvaluationContextImpl evaluationContext,
                                            NodeManagerImpl nodeManager,
-                                           Location creationPlace,
                                            ObjectReference instance) {
         JavaValue javaValue = new JavaValueImpl(valueDescriptor, evaluationContext, nodeManager);
-        return new InstanceJavaValue(javaValue, instance, creationPlace);
+        return new InstanceJavaValue(javaValue, instance);
     }
 
     public static InstanceJavaValue create(Project project,
-                                           ObjectReference instance,
-                                           Location creationPlace) {
-        return new InstanceJavaValue(project, instance, creationPlace);
+                                           ObjectReference instance) {
+        return new InstanceJavaValue(project, instance);
     }
 
     private static class JavaValueImpl extends JavaValue {

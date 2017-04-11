@@ -21,6 +21,8 @@ import com.sun.jdi.*;
 import com.sun.jdi.event.LocatableEvent;
 import com.sun.jdi.request.BreakpointRequest;
 import com.sun.jdi.request.ClassPrepareRequest;
+import net.falsetrue.heapwalker.util.map.ObjectMap;
+import net.falsetrue.heapwalker.util.map.ObjectTimeMap;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.java.debugger.breakpoints.properties.JavaLineBreakpointProperties;
 
@@ -31,7 +33,7 @@ public class CreationMonitoring {
     private DebugProcessImpl debugProcess;
     private Project project;
     private XDebugSession debugSession;
-    private Map<ObjectReference, Location> creationPlaces;
+    private ObjectMap<List<Location>> creationPlaces;
 
     private Set<ReferenceType> trackedTypes = new HashSet<>();
 
@@ -39,8 +41,7 @@ public class CreationMonitoring {
         this.debugSession = debugSession;
         project = debugSession.getProject();
 
-        creationPlaces = Collections
-            .synchronizedMap(new IdentityHashMap<>());
+        creationPlaces = new ObjectMap<>();
 
         debugProcess = (DebugProcessImpl) DebuggerManager.getInstance(project)
             .getDebugProcess(debugSession.getDebugProcess().getProcessHandler());
@@ -109,20 +110,18 @@ public class CreationMonitoring {
             try {
                 ThreadReference thread = event.thread();
                 ObjectReference object = thread.frame(0).thisObject();
-                if (!creationPlaces.containsKey(object)) {
-//                    System.out.println("Creation of " + object);
-                    int frameIndex = 1;
-                    while (frameIndex < thread.frameCount()
-                        && Objects.equals(thread.frame(frameIndex).thisObject(), object)) {
-                        frameIndex++;
+                creationPlaces.putIfAbsent(object, () -> {
+                    try {
+                        List<Location> stack = new ArrayList<>(thread.frameCount());
+                        for (int i = 0; i < thread.frameCount(); i++) {
+                            stack.add(thread.frame(i).location());
+                        }
+                        return stack;
+                    } catch (IncompatibleThreadStateException e) {
+                        e.printStackTrace();
+                        return null;
                     }
-                    if (frameIndex < thread.frameCount()) {
-                        Location creationPlace = thread.frame(frameIndex).location();
-                        creationPlaces.put(object, creationPlace);
-                    }
-//                                    System.out.println(creationPlace.sourceName() + ":"
-//                                        + creationPlace.lineNumber());
-                }
+                });
             } catch (IncompatibleThreadStateException e) {
                 e.printStackTrace();
             }
@@ -130,7 +129,7 @@ public class CreationMonitoring {
         }
     }
 
-    public Map<ObjectReference, Location> getCreationPlaces() {
+    public ObjectMap<List<Location>> getCreationPlaces() {
         return creationPlaces;
     }
 }

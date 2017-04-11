@@ -169,7 +169,8 @@ public class MyPanel extends JBSplitter {
                     for (ClassInstance classInstance : classInstances) {
                         model.add(classInstance.type.name(), classInstance.count);
                         if (classInstance.type.equals(selected)) {
-                            table.setRowSelectionInterval(index, index);
+                            int finalIndex = index;
+                            SwingUtilities.invokeLater(() -> table.setRowSelectionInterval(finalIndex, finalIndex));
                         }
                         index++;
                     }

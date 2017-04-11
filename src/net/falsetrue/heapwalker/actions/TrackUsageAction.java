@@ -1,9 +1,6 @@
 package net.falsetrue.heapwalker.actions;
 
-import com.intellij.debugger.impl.DebuggerSession;
-import com.intellij.execution.ExecutionBundle;
 import com.intellij.icons.AllIcons;
-import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.Presentation;
 import com.intellij.openapi.actionSystem.ToggleAction;
@@ -11,8 +8,7 @@ import com.intellij.xdebugger.XDebugSession;
 import com.sun.jdi.ArrayType;
 import com.sun.jdi.ReferenceType;
 import net.falsetrue.heapwalker.monitorings.AccessMonitoring;
-import net.falsetrue.heapwalker.monitorings.CreationMonitoring;
-import net.falsetrue.heapwalker.util.ObjectTimeMap;
+import net.falsetrue.heapwalker.util.map.ObjectTimeMap;
 import net.falsetrue.heapwalker.util.TimeManager;
 import org.jetbrains.annotations.NotNull;
 

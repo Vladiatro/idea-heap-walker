@@ -1,13 +1,11 @@
 package net.falsetrue.heapwalker.util;
 
 import com.intellij.openapi.project.Project;
-import com.intellij.ui.components.JBPanel;
 import com.intellij.ui.components.panels.HorizontalLayout;
-import com.intellij.xdebugger.impl.ui.tree.XValueExtendedPresentation;
 import com.intellij.xdebugger.impl.ui.tree.nodes.XValueNodeImpl;
 import net.falsetrue.heapwalker.InstanceJavaValue;
 import net.falsetrue.heapwalker.MyStateService;
-import net.falsetrue.heapwalker.ui.Chart;
+import net.falsetrue.heapwalker.util.map.ObjectTimeMap;
 
 import javax.swing.*;
 import javax.swing.tree.TreeCellRenderer;

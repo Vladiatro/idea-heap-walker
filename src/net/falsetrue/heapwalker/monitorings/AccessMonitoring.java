@@ -1,11 +1,9 @@
 package net.falsetrue.heapwalker.monitorings;
 
 import com.intellij.debugger.DebuggerManager;
-import com.intellij.debugger.engine.DebugProcess;
 import com.intellij.debugger.engine.DebugProcessImpl;
 import com.intellij.debugger.engine.events.DebuggerCommandImpl;
 import com.intellij.debugger.engine.events.SuspendContextCommandImpl;
-import com.intellij.debugger.requests.ClassPrepareRequestor;
 import com.intellij.debugger.ui.breakpoints.JavaLineBreakpointType;
 import com.intellij.debugger.ui.breakpoints.LineBreakpoint;
 import com.intellij.openapi.application.ApplicationManager;
@@ -13,7 +11,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.psi.JavaPsiFacade;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.xdebugger.XDebugSession;
-import com.intellij.xdebugger.XDebugSessionListener;
 import com.intellij.xdebugger.breakpoints.XBreakpoint;
 import com.intellij.xdebugger.impl.XDebuggerManagerImpl;
 import com.intellij.xdebugger.impl.breakpoints.LineBreakpointState;
@@ -22,14 +19,11 @@ import com.sun.jdi.*;
 import com.sun.jdi.event.AccessWatchpointEvent;
 import com.sun.jdi.event.LocatableEvent;
 import com.sun.jdi.request.AccessWatchpointRequest;
-import com.sun.jdi.request.ClassPrepareRequest;
-import net.falsetrue.heapwalker.util.ObjectTimeMap;
+import net.falsetrue.heapwalker.util.map.ObjectTimeMap;
 import net.falsetrue.heapwalker.util.TimeManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.java.debugger.breakpoints.properties.JavaFieldBreakpointProperties;
 import org.jetbrains.java.debugger.breakpoints.properties.JavaLineBreakpointProperties;
-
-import java.util.*;
 
 public class AccessMonitoring {
     private String stubFileName;
