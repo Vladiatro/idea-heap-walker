@@ -9,6 +9,8 @@ import java.awt.event.ActionListener;
 
 public class BlackThresholdComboBox extends JComboBox<BlackThresholdComboBox.Item> {
     private static final Item[] ITEMS = {
+        new Item("6 seconds", 6),
+        new Item("18 seconds", 18),
         new Item("30 seconds", 30),
         new Item("1 minute", 60),
         new Item("3 minutes", 180),

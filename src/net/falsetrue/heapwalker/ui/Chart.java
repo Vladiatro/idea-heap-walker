@@ -9,12 +9,13 @@ import java.util.List;
 
 @SuppressWarnings("UseJBColor")
 public class Chart extends JPanel {
-    private static final int CHART_WIDTH_PERCENT = 94;
+    private static final int CHART_WIDTH_PERCENT = 96;
     private static final int CHART_MARGIN_PERCENT = (100 - CHART_WIDTH_PERCENT) / 2;
 
     private List<Item> data;
     private int hovered = -1;
     private int chartSize;
+    private int sum;
 
     public Chart() {
         super(new GridLayout(1, 1));
@@ -41,7 +42,9 @@ public class Chart extends JPanel {
                     if (newHovered == -1) {
                         newHovered = data.size() - 1;
                     }
-                    setToolTipText(data.get(newHovered).label + ": " + data.get(newHovered).count);
+                    Item item = data.get(newHovered);
+                    setToolTipText(item.label + ": " + item.count +
+                                    " (" + (item.count * 100 / sum) + "%)");
                 }
                 if (newHovered != hovered) {
                     hovered = newHovered;
@@ -75,14 +78,13 @@ public class Chart extends JPanel {
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
         if (data != null) {
-            ((Graphics2D) g).setRenderingHint(
+            Graphics2D g2d = (Graphics2D) g;
+            g2d.setRenderingHint(
                 RenderingHints.KEY_ANTIALIASING,
                 RenderingHints.VALUE_ANTIALIAS_ON);
             chartSize = Math.min(getWidth(), getHeight());
-            g.setColor(data.get(data.size() - 1).color);
             int smallSize = chartSize * CHART_WIDTH_PERCENT / 100;
             int smallStart = chartSize * CHART_MARGIN_PERCENT / 100;
-            g.fillArc(smallStart, smallStart, smallSize, smallSize, 0, 360);
             for (int i = 0; i < data.size(); i++) {
                 Item item = data.get(i);
                 if (item.count == 0) {
@@ -106,17 +108,17 @@ public class Chart extends JPanel {
     public void setData(List<Item> data) {
         this.data = data;
         if (data.size() > 0) {
-            int sum = data.stream().mapToInt(Item::getCount).sum();
-            int lastAngle = 0;
+            sum = data.stream().mapToInt(Item::getCount).sum();
+            int currentSum = 0;
             for (Item item : data) {
                 if (item.count == 0) {
                     continue;
                 }
-                item.angle = item.count * 360 / sum;
-                item.startAngle = lastAngle;
-                lastAngle += item.angle;
+                int nextAngle = (currentSum + item.count) * 360 / sum;
+                item.startAngle = currentSum * 360 / sum;
+                item.angle = nextAngle - item.startAngle;
+                currentSum += item.count;
             }
-            data.get(data.size() - 1).angle = 360 - data.get(data.size() - 1).startAngle;
         }
         repaint();
     }
