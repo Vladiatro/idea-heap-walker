@@ -13,10 +13,12 @@ import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.ActionToolbar;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.util.Pair;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.components.*;
+import com.intellij.util.Generator;
 import com.intellij.util.ui.components.BorderLayoutPanel;
 import com.intellij.xdebugger.XDebugSession;
 import com.intellij.xdebugger.frame.*;
@@ -47,6 +49,7 @@ import java.awt.*;
 import java.util.*;
 import java.util.List;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @SuppressWarnings("UseJBColor")
@@ -76,6 +79,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     private Chart usageChart;
     private Chart creationPlacesChart;
     private FrameList frameList;
+    private GroupType groupType = GroupType.LINE;
 
     public InstancesView(Project project, TimeManager timeManager) {
         myNodeManager = new MyNodeManager(project);
@@ -130,8 +134,9 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         splitter.setSecondComponent(tabs);
         addToCenter(splitter);
         insertCreationStackPanel(tabs);
-        insertUsageChart(tabs);
         insertCreationPlacesChart(tabs);
+        insertUsageChart(tabs);
+        tabs.setSelectedIndex(0);
     }
 
     private void insertCreationStackPanel(JBTabbedPane tabs) {
@@ -140,19 +145,27 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         tabs.insertTab("Stack", null, scrollPane, "Stack frame on object creation", 0);
     }
 
+    private void insertCreationPlacesChart(JBTabbedPane tabs) {
+        creationPlacesChart = new Chart();
+        JPanel panel = new JPanel(new BorderLayout(0, 0));
+        JComboBox<GroupType> comboBox = new ComboBox<>(GroupType.values());
+        comboBox.addActionListener(e -> {
+            groupType = (GroupType) comboBox.getSelectedItem();
+            updateCreationPlacesChart();
+        });
+        panel.add(new LabeledComponent("Group by: ", comboBox), BorderLayout.NORTH);
+        panel.add(creationPlacesChart, BorderLayout.CENTER);
+        tabs.insertTab("Creation", null, panel, "Creation places chart", 1);
+    }
+
     private void insertUsageChart(JBTabbedPane tabs) {
         JPanel panel = new JPanel(new BorderLayout(0, 0));
         BlackThresholdComboBox comboBox = new BlackThresholdComboBox(project);
         comboBox.setChangeListener(this::updateUsageChart);
         usageChart = new Chart();
-        panel.add(comboBox, BorderLayout.NORTH);
+        panel.add(new LabeledComponent("Black zone: ", comboBox), BorderLayout.NORTH);
         panel.add(usageChart, BorderLayout.CENTER);
-        tabs.insertTab("Usage", null, panel, "Usage statistics", 0);
-    }
-
-    private void insertCreationPlacesChart(JBTabbedPane tabs) {
-        creationPlacesChart = new Chart();
-        tabs.insertTab("Creation", null, creationPlacesChart, "Creation places chart", 0);
+        tabs.insertTab("Usage", null, panel, "Usage statistics", 2);
     }
 
     private XValueMarkers<?, ?> getValueMarkers() {
@@ -247,13 +260,26 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         }
     }
 
+    private void updateCreationPlacesChart() {
+        if (virtualMachine == null || debugProcess == null || debugProcess.isDetached() || referenceType == null) {
+            return;
+        }
+        debugProcess.getManagerThread().invoke(new DebuggerCommandImpl() {
+            @Override
+            protected void action() throws Exception {
+                List<ObjectReference> instances = referenceType.instances(0);
+                updateCreationPlacesChart(instances);
+            }
+        });
+    }
+
     private void updateCreationPlacesChart(List<ObjectReference> instances) {
         creationPlacesChart.setData(instances.stream()
             .map((reference) -> {
                 CreationInfo creationInfo = creationPlaces.get(reference);
                 return creationInfo == null ? null : creationInfo.getUserCodeLocation();
             })
-            .collect(Collectors.groupingBy(CheatLocation::new, Collectors.reducing(0, e -> 1, Integer::sum)))
+            .collect(Collectors.groupingBy(groupType.getSupplier(), Collectors.reducing(0, e -> 1, Integer::sum)))
             .entrySet()
             .stream()
             .map(entry -> entry.getKey().getItem(entry.getValue()))
@@ -385,7 +411,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         }
     }
 
-    private static class CheatLocation {
+    private static class CheatLocation implements Itemable {
         private final Location location;
         private int hashCode;
 
@@ -420,11 +446,80 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
                 && l.location.lineNumber() == location.lineNumber();
         }
 
+        @Override
         public Chart.Item getItem(int count) {
             if (location == null) {
                 return new Chart.Item("n/a", count, JBColor.BLACK);
             }
             return new Chart.Item(NameUtils.locationToString(location), count);
+        }
+    }
+
+    private static class CheatMethod implements Itemable {
+        private final Method method;
+        private int hashCode;
+
+        private CheatMethod(Location location) {
+            if (location == null || location.method() == null) {
+                hashCode = 0;
+                method = null;
+            } else {
+                method = location.method();
+                hashCode = method.hashCode();
+            }
+        }
+
+        @Override
+        public int hashCode() {
+            return hashCode;
+        }
+
+        @SuppressWarnings("EqualsWhichDoesntCheckParameterClass")
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this) {
+                return true;
+            }
+            CheatMethod m = (CheatMethod) obj;
+            if (method == null && m.method == null) {
+                return true;
+            }
+            if (method == null || m.method == null) {
+                return false;
+            }
+            return method.equals(m.method);
+        }
+
+        @Override
+        public Chart.Item getItem(int count) {
+            if (method == null) {
+                return new Chart.Item("n/a", count, JBColor.BLACK);
+            }
+            return new Chart.Item(method.declaringType().name() + "." + method.name() + "()", count);
+        }
+    }
+
+    private interface Itemable {
+        Chart.Item getItem(int count);
+    }
+
+    private enum GroupType {
+        LINE(CheatLocation::new, "Line"), METHOD(CheatMethod::new, "Method");
+
+        private Function<Location, Itemable> supplier;
+        private String name;
+
+        GroupType(Function<Location, Itemable> supplier, String name) {
+            this.supplier = supplier;
+            this.name = name;
+        }
+
+        Function<Location, Itemable> getSupplier() {
+            return supplier;
+        }
+
+        String getName() {
+            return name;
         }
     }
 }
