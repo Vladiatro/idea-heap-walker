@@ -54,6 +54,8 @@ import java.util.stream.Collectors;
 
 @SuppressWarnings("UseJBColor")
 public class InstancesView extends BorderLayoutPanel implements Disposable {
+    private static final int INSTANCES_LIMIT = 10000;
+
     private static final Color COLOR_0 = new Color(0, 255, 0);
     private static final Color COLOR_1 = new Color(128, 255, 0);
     private static final Color COLOR_2 = new Color(255, 255, 0);
@@ -303,30 +305,51 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
                 XValueChildrenList list = new XValueChildrenList();
                 updateUsageChart(instances, MyStateService.getInstance(project).getBlackAgeSeconds());
                 updateCreationPlacesChart(instances);
+                int i = 0;
+                Iterator<ObjectReference> iterator;
                 if (evaluationContext == null) {
-                    int i = 0;
-                    for (ObjectReference instance : instances) {
+                    for (iterator = instances.iterator(); iterator.hasNext(); ) {
+                        ObjectReference instance = iterator.next();
                         list.add(InstanceJavaValue.create(project, instance));
                         if (instance.equals(reference)) {
                             selected = i;
                         }
                         i++;
+                        if (i > INSTANCES_LIMIT) {
+                            break;
+                        }
                     }
                 } else {
-                    int i = 0;
-                    for (ObjectReference instance : instances) {
+                    for (iterator = instances.iterator(); iterator.hasNext(); ) {
+                        ObjectReference instance = iterator.next();
                         InstanceValueDescriptor valueDescriptor = new InstanceValueDescriptor(project, instance);
                         list.add(InstanceJavaValue.create(valueDescriptor, evaluationContext, nodeManager, instance));
                         if (instance.equals(reference)) {
                             selected = i;
                         }
                         i++;
+                        if (i > INSTANCES_LIMIT) {
+                            break;
+                        }
                     }
                 }
+                appendReferenceIfNeeded(reference, iterator, list, i);
                 addChildrenToTree(list, false);
             }
         });
+    }
 
+    private void appendReferenceIfNeeded(ObjectReference reference, Iterator<ObjectReference> iterator,
+                                         XValueChildrenList list, int i) {
+        if (reference != null && selected == -1) {
+            while (iterator.hasNext()) {
+                ObjectReference instance = iterator.next();
+                if (instance.equals(reference)) {
+                    list.add(InstanceJavaValue.create(project, instance));
+                    selected = i;
+                }
+            }
+        }
     }
 
     private String[] createLabels() {
@@ -518,7 +541,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
             return supplier;
         }
 
-        String getName() {
+        public String toString() {
             return name;
         }
     }
