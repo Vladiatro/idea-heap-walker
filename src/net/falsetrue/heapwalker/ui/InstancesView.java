@@ -18,7 +18,6 @@ import com.intellij.openapi.util.Pair;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.components.*;
-import com.intellij.util.Generator;
 import com.intellij.util.ui.components.BorderLayoutPanel;
 import com.intellij.xdebugger.XDebugSession;
 import com.intellij.xdebugger.frame.*;
@@ -49,20 +48,22 @@ import java.awt.*;
 import java.util.*;
 import java.util.List;
 import java.util.function.Function;
-import java.util.function.Supplier;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 @SuppressWarnings("UseJBColor")
 public class InstancesView extends BorderLayoutPanel implements Disposable {
     private static final int INSTANCES_LIMIT = 10000;
 
-    private static final Color COLOR_0 = new Color(0, 255, 0);
-    private static final Color COLOR_1 = new Color(128, 255, 0);
-    private static final Color COLOR_2 = new Color(255, 255, 0);
-    private static final Color COLOR_3 = new Color(255, 128, 0);
-    private static final Color COLOR_4 = new Color(255, 0, 0);
-    private static final Color COLOR_5 = new Color(128, 0, 0);
-    private static final Color COLOR_6 = new Color(0, 0, 0);
+    private static final Color[] USAGE_COLORS = {
+        new Color(0, 255, 0),
+        new Color(128, 255, 0),
+        new Color(255, 255, 0),
+        new Color(255, 128, 0),
+        new Color(255, 0, 0),
+        new Color(128, 0, 0),
+        new Color(0, 0, 0),
+    };
 
     private final XDebuggerTree instancesTree;
     private final TrackUsageAction trackUsageAction;
@@ -78,10 +79,15 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     private int selected = -1;
     private TimeManager timeManager;
     private ObjectTimeMap objectTimeMap;
-    private Chart usageChart;
-    private Chart creationPlacesChart;
+    private Chart<Integer> usageChart;
+    private Chart<Itemable> creationPlacesChart;
     private FrameList frameList;
     private GroupType groupType = GroupType.LINE;
+    private List<Predicate<ObjectReference>> referenceFilters = new ArrayList<>();
+    private List<Chart<?>> filterCharts = new ArrayList<>();
+    private Predicate<ObjectReference> usageFilter;
+    private Predicate<ObjectReference> creationPlaceFilter;
+    private Predicate<ObjectReference> creationTimeFilter;
 
     public InstancesView(Project project, TimeManager timeManager) {
         myNodeManager = new MyNodeManager(project);
@@ -148,11 +154,26 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     }
 
     private void insertCreationPlacesChart(JBTabbedPane tabs) {
-        creationPlacesChart = new Chart();
+        creationPlacesChart = new Chart<>();
+        creationPlacesChart.setItemSelectedListener((object, position) -> {
+            if (creationPlaceFilter != null) {
+                clearFilters(creationPlaceFilter);
+            }
+            if (position == -1) {
+                creationPlaceFilter = null;
+                fullUpdateInstances();
+                return;
+            }
+            creationPlaceFilter = reference -> object.check(reference, creationPlaces);
+            referenceFilters.add(creationPlaceFilter);
+            filterCharts.add(creationPlacesChart);
+            fullUpdateInstances();
+        });
         JPanel panel = new JPanel(new BorderLayout(0, 0));
         JComboBox<GroupType> comboBox = new ComboBox<>(GroupType.values());
         comboBox.addActionListener(e -> {
             groupType = (GroupType) comboBox.getSelectedItem();
+            creationPlacesChart.unselect();
             updateCreationPlacesChart();
         });
         panel.add(new LabeledComponent("Group by: ", comboBox), BorderLayout.NORTH);
@@ -163,8 +184,34 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     private void insertUsageChart(JBTabbedPane tabs) {
         JPanel panel = new JPanel(new BorderLayout(0, 0));
         BlackThresholdComboBox comboBox = new BlackThresholdComboBox(project);
-        comboBox.setChangeListener(this::updateUsageChart);
-        usageChart = new Chart();
+        comboBox.setChangeListener((blackAge1) -> {
+            usageChart.unselect();
+            updateUsageChart(blackAge1);
+        });
+        usageChart = new Chart<>();
+        usageChart.setNullObject(-1);
+        usageChart.setItemSelectedListener((object, position) -> {
+            int blackAge = MyStateService.getInstance(project).getBlackAgeSeconds() * 1000;
+            if (usageFilter != null) {
+                clearFilters(usageFilter);
+            }
+            if (position == -1) {
+                usageFilter = null;
+                fullUpdateInstances();
+                return;
+            }
+            usageFilter = reference -> {
+                long time = objectTimeMap.get(reference);
+                if (time > -1) {
+                    time = timeManager.getTime() - time;
+                    return object == Math.min(6, (int) (time * 6 / blackAge));
+                }
+                return object == 6;
+            };
+            referenceFilters.add(usageFilter);
+            filterCharts.add(usageChart);
+            fullUpdateInstances();
+        });
         panel.add(new LabeledComponent("Black zone: ", comboBox), BorderLayout.NORTH);
         panel.add(usageChart, BorderLayout.CENTER);
         tabs.insertTab("Usage", null, panel, "Usage statistics", 2);
@@ -221,6 +268,13 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         SwingUtilities.invokeLater(instancesTree.getRoot()::clearChildren);
     }
 
+    private void fullUpdateInstances() {
+        if (instancesTree != null && instancesTree.getRoot() != null) {
+            SwingUtilities.invokeLater(() -> instancesTree.getRoot().clearChildren());
+        }
+        updateInstances(null, true);
+    }
+
     private void updateUsageChart(int blackAge) {
         if (virtualMachine == null || debugProcess == null || debugProcess.isDetached() || referenceType == null) {
             return;
@@ -238,25 +292,25 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         if (timeManager.isPaused() && trackUsageAction.isSelected()) {
             blackAge *= 1000;
             int[] counts = new int[7];
-            List<Chart.Item> chartData = new ArrayList<>(7);
-            for (ObjectReference instance : instances) {
+            in: for (ObjectReference instance : instances) {
+                for (Predicate<ObjectReference> filter : referenceFilters) {
+                    if (filter == usageFilter) {
+                        break;
+                    }
+                    if (!filter.test(instance)) {
+                        continue in;
+                    }
+                }
+
                 long time = objectTimeMap.get(instance);
                 if (time > -1) {
-                    time = timeManager.getTime() - objectTimeMap.get(instance);
+                    time = timeManager.getTime() - time;
                     counts[Math.min(6, (int) (time * 6 / blackAge))]++;
                 } else {
                     counts[6]++;
                 }
             }
-            String[] labels = createLabels();
-            chartData.add(new Chart.Item(labels[0], counts[0], COLOR_0));
-            chartData.add(new Chart.Item(labels[1], counts[1], COLOR_1));
-            chartData.add(new Chart.Item(labels[2], counts[2], COLOR_2));
-            chartData.add(new Chart.Item(labels[3], counts[3], COLOR_3));
-            chartData.add(new Chart.Item(labels[4], counts[4], COLOR_4));
-            chartData.add(new Chart.Item(labels[5], counts[5], COLOR_5));
-            chartData.add(new Chart.Item(labels[6], counts[6], COLOR_6));
-            usageChart.setData(chartData);
+            fillUsageChart(counts);
         } else {
             usageChart.clear();
         }
@@ -277,6 +331,17 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
 
     private void updateCreationPlacesChart(List<ObjectReference> instances) {
         creationPlacesChart.setData(instances.stream()
+            .filter(reference -> {
+                for (Predicate<ObjectReference> filter : referenceFilters) {
+                    if (filter == creationPlaceFilter) {
+                        return true;
+                    }
+                    if (!filter.test(reference)) {
+                        return false;
+                    }
+                }
+                return true;
+            })
             .map((reference) -> {
                 CreationInfo creationInfo = creationPlaces.get(reference);
                 return creationInfo == null ? null : creationInfo.getUserCodeLocation();
@@ -284,7 +349,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
             .collect(Collectors.groupingBy(groupType.getSupplier(), Collectors.reducing(0, e -> 1, Integer::sum)))
             .entrySet()
             .stream()
-            .map(entry -> entry.getKey().getItem(entry.getValue()))
+            .map(entry -> entry.getKey().getItem(creationPlacesChart, entry.getValue()))
             .collect(Collectors.toCollection(ArrayList::new)));
     }
 
@@ -308,8 +373,13 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
                 int i = 0;
                 Iterator<ObjectReference> iterator;
                 if (evaluationContext == null) {
-                    for (iterator = instances.iterator(); iterator.hasNext(); ) {
+                    it: for (iterator = instances.iterator(); iterator.hasNext(); ) {
                         ObjectReference instance = iterator.next();
+                        for (Predicate<ObjectReference> filter : referenceFilters) {
+                            if (!filter.test(instance)) {
+                                continue it;
+                            }
+                        }
                         list.add(InstanceJavaValue.create(project, instance));
                         if (instance.equals(reference)) {
                             selected = i;
@@ -320,8 +390,13 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
                         }
                     }
                 } else {
-                    for (iterator = instances.iterator(); iterator.hasNext(); ) {
+                    it: for (iterator = instances.iterator(); iterator.hasNext(); ) {
                         ObjectReference instance = iterator.next();
+                        for (Predicate<ObjectReference> filter : referenceFilters) {
+                            if (!filter.test(instance)) {
+                                continue it;
+                            }
+                        }
                         InstanceValueDescriptor valueDescriptor = new InstanceValueDescriptor(project, instance);
                         list.add(InstanceJavaValue.create(valueDescriptor, evaluationContext, nodeManager, instance));
                         if (instance.equals(reference)) {
@@ -352,34 +427,49 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         }
     }
 
-    private String[] createLabels() {
+    private void fillUsageChart(int[] counts) {
         int blackAge = MyStateService.getInstance(project).getBlackAgeSeconds();
-        String[] result = new String[7];
+        List<Chart<Integer>.Item> items = new ArrayList<>();
         for (int i = 0; i < 6; i++) {
+            String label;
             int first = blackAge * i / 6;
             int second = blackAge * (i + 1) / 6;
             if (first == 0) {
                 if (second < 60) {
-                    result[i] = "&lt;" + seconds(second);
+                    label = "&lt;" + seconds(second);
                 } else {
-                    result[i] = "&lt;" + minsSecs(second);
+                    label = "&lt;" + minsSecs(second);
                 }
             } else if (first < 60 && second < 60) {
-                result[i] = first + "-" + second + " seconds";
+                label = first + "-" + second + " seconds";
             } else if (first % 60 == 0 && second % 60 == 0) {
-                result[i] = (first / 60) + "-" + (second / 60) + " minutes";
+                label = (first / 60) + "-" + (second / 60) + " minutes";
             } else {
-                result[i] = minsSecs(first) + " - " + minsSecs(second);
+                label = minsSecs(first) + " - " + minsSecs(second);
             }
+            items.add(usageChart.newItem(i, label, counts[i], USAGE_COLORS[i]));
         }
+        String label;
         if (blackAge < 60) {
-            result[6] = ">" + seconds(blackAge) + " or n/a";
+            label = ">" + seconds(blackAge) + " or n/a";
         } else if (blackAge % 60 == 0) {
-            result[6] = ">" + minutes(blackAge) + " or n/a";
+            label = ">" + minutes(blackAge) + " or n/a";
         } else {
-            result[6] = ">" + minsSecs(blackAge) + " or n/a";
+            label = ">" + minsSecs(blackAge) + " or n/a";
         }
-        return result;
+        items.add(usageChart.newItem(6, label, counts[6], USAGE_COLORS[6]));
+        usageChart.setData(items);
+    }
+
+    private void clearFilters(Predicate<ObjectReference> from) {
+        for (int i = referenceFilters.size() - 1; i >= 0; i--) {
+            Predicate<ObjectReference> removed = referenceFilters.remove(referenceFilters.size() - 1);
+            Chart<?> chart = filterCharts.remove(referenceFilters.size());
+            if (removed == from) {
+                break;
+            }
+            chart.unselectWithoutListener();
+        }
     }
 
     private String seconds(int seconds) {
@@ -458,23 +548,31 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
             if (obj == this) {
                 return true;
             }
-            CheatLocation l = (CheatLocation) obj;
-            if (location == null && l.location == null) {
+            return locationEquals(((CheatLocation) obj).location);
+        }
+
+        private boolean locationEquals(Location l) {
+            if (location == null && l == null) {
                 return true;
             }
-            if (location == null || l.location == null) {
+            if (location == null || l == null) {
                 return false;
             }
-            return l.location.declaringType().equals(location.declaringType())
-                && l.location.lineNumber() == location.lineNumber();
+            return l.declaringType().equals(location.declaringType())
+                && l.lineNumber() == location.lineNumber();
         }
 
         @Override
-        public Chart.Item getItem(int count) {
+        public boolean check(ObjectReference reference, ObjectMap<CreationInfo> objectMap) {
+            return locationEquals(objectMap.get(reference).getUserCodeLocation());
+        }
+
+        @Override
+        public Chart<Itemable>.Item getItem(Chart<Itemable> chart, int count) {
             if (location == null) {
-                return new Chart.Item("n/a", count, JBColor.BLACK);
+                return chart.newItem(this, "n/a", count, JBColor.BLACK);
             }
-            return new Chart.Item(NameUtils.locationToString(location), count);
+            return chart.newItem(this, NameUtils.locationToString(location), count);
         }
     }
 
@@ -503,27 +601,38 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
             if (obj == this) {
                 return true;
             }
-            CheatMethod m = (CheatMethod) obj;
-            if (method == null && m.method == null) {
+            return methodEquals(((CheatMethod) obj).method);
+        }
+
+        private boolean methodEquals(Method m) {
+            if (method == null && m == null) {
                 return true;
             }
-            if (method == null || m.method == null) {
+            if (method == null || m == null) {
                 return false;
             }
-            return method.equals(m.method);
+            return method.equals(m);
         }
 
         @Override
-        public Chart.Item getItem(int count) {
+        public boolean check(ObjectReference reference, ObjectMap<CreationInfo> objectMap) {
+            return methodEquals(objectMap.get(reference).getMethod());
+        }
+
+        @Override
+        public Chart<Itemable>.Item getItem(Chart<Itemable> chart, int count) {
             if (method == null) {
-                return new Chart.Item("n/a", count, JBColor.BLACK);
+                return chart.newItem(this, "n/a", count, JBColor.BLACK);
             }
-            return new Chart.Item(method.declaringType().name() + "." + method.name() + "()", count);
+            return chart.newItem(this,
+                method.declaringType().name() + "." + method.name() + "()", count);
         }
     }
 
     private interface Itemable {
-        Chart.Item getItem(int count);
+        boolean check(ObjectReference reference, ObjectMap<CreationInfo> objectMap);
+
+        Chart<Itemable>.Item getItem(Chart<Itemable> chart, int count);
     }
 
     private enum GroupType {
