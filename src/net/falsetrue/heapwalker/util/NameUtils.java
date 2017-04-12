@@ -1,7 +1,9 @@
 package net.falsetrue.heapwalker.util;
 
 import com.intellij.openapi.util.text.StringUtil;
+import com.sun.jdi.AbsentInformationException;
 import com.sun.jdi.ArrayReference;
+import com.sun.jdi.Location;
 import com.sun.jdi.ObjectReference;
 import org.jetbrains.annotations.NotNull;
 
@@ -24,5 +26,17 @@ public class NameUtils {
         int length = ref.length();
         String name = shortName.replaceFirst(Pattern.quote("[]"), String.format("[%d]", length));
         return String.format("%s@%d", name, ref.uniqueID());
+    }
+
+    public static String locationToString(Location location) {
+        if (location.method().name().isEmpty()) {
+            try {
+                return location.sourceName() + ":" + location.lineNumber();
+            } catch (AbsentInformationException e) {
+                return location.toString();
+            }
+        }
+        return String.format("%s:%d, %s", location.method().name(), location.lineNumber(),
+            location.declaringType().name());
     }
 }

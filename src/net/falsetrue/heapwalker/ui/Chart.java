@@ -1,5 +1,7 @@
 package net.falsetrue.heapwalker.ui;
 
+import com.intellij.ui.JBColor;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
@@ -10,16 +12,13 @@ import java.util.List;
 @SuppressWarnings("UseJBColor")
 public class Chart extends JPanel {
     private static final Color[] INSERTED_COLORS = {
-        new Color(255, 0, 0),
-        new Color(255, 128, 0),
-        new Color(255, 255, 0),
-        new Color(128, 255, 0),
-        new Color(0, 255, 0),
-        new Color(0, 255, 128),
-        new Color(0, 255, 255),
-        new Color(0, 128, 255),
-        new Color(0, 0, 255),
-        new Color(128, 0, 255),
+        JBColor.RED,
+        JBColor.YELLOW,
+        JBColor.ORANGE,
+        JBColor.CYAN,
+        JBColor.GREEN,
+        JBColor.BLUE,
+        JBColor.PINK,
     };
 
     private static final int CHART_WIDTH_PERCENT = 96;
@@ -123,6 +122,7 @@ public class Chart extends JPanel {
         if (data.size() > 0) {
             sum = data.stream().mapToInt(Item::getCount).sum();
             int currentSum = 0;
+            int colorPos = 0;
             for (Item item : data) {
                 if (item.count == 0) {
                     continue;
@@ -132,7 +132,11 @@ public class Chart extends JPanel {
                 item.angle = nextAngle - item.startAngle;
                 currentSum += item.count;
                 if (item.color == null) {
-                    item.color = new Color(item.label.hashCode(), false);
+                    if (colorPos < INSERTED_COLORS.length) {
+                        item.color = INSERTED_COLORS[colorPos++];
+                    } else {
+                        item.color = new Color(item.label.hashCode(), false);
+                    }
                 }
             }
         }
@@ -145,6 +149,11 @@ public class Chart extends JPanel {
         private Color color;
         private int startAngle;
         private int angle;
+
+        public Item(String label, int count) {
+            this.label = label;
+            this.count = count;
+        }
 
         public Item(String label, int count, Color color) {
             this.label = label;

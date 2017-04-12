@@ -1,5 +1,7 @@
 package net.falsetrue.heapwalker.monitorings;
 
+import com.intellij.openapi.application.Application;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.JavaPsiFacade;
@@ -30,17 +32,23 @@ public class CreationInfo {
         if (iterator.hasNext()) {
             iterator.next();
         }
-        while (iterator.hasNext()) {
-            Location location = iterator.next();
-            PsiClass psiClass = JavaPsiFacade.getInstance(project)
-                .findClass(location.declaringType().name(), GlobalSearchScope.everythingScope(project));
-            if (psiClass != null) {
-                userCodeLocation = location;
-                method = location.method();
-                break;
+        ApplicationManager.getApplication().runReadAction(() -> {
+            while (iterator.hasNext()) {
+                Location location = iterator.next();
+                PsiClass psiClass = JavaPsiFacade.getInstance(project)
+                    .findClass(location.declaringType().name(), GlobalSearchScope.projectScope(project));
+                if (psiClass != null) {
+                    synchronized (CreationInfo.this) {
+                        userCodeLocation = location;
+                        method = location.method();
+                    }
+                    break;
+                }
             }
-        }
-        userLocationComputed = true;
+            synchronized (CreationInfo.this) {
+                userLocationComputed = true;
+            }
+        });
     }
 
     public List<Location> getStack() {

@@ -9,6 +9,7 @@ import com.intellij.ui.components.JBList;
 import com.intellij.xdebugger.frame.XStackFrame;
 import com.intellij.xdebugger.impl.frame.XDebuggerFramesList;
 import com.sun.jdi.Location;
+import net.falsetrue.heapwalker.util.NameUtils;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
@@ -68,8 +69,7 @@ public class FrameList extends JBList<FrameList.Item> {
 
         @Override
         public String toString() {
-            return String.format("%s:%d, %s", location.method().name(), location.lineNumber(),
-                location.declaringType().name());
+            return NameUtils.locationToString(location);
         }
     }
 }

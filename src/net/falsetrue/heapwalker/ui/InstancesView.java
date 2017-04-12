@@ -14,6 +14,7 @@ import com.intellij.openapi.actionSystem.ActionToolbar;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Pair;
+import com.intellij.ui.JBColor;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.components.*;
 import com.intellij.util.ui.components.BorderLayoutPanel;
@@ -27,16 +28,14 @@ import com.intellij.xdebugger.impl.ui.tree.XDebuggerTreeListener;
 import com.intellij.xdebugger.impl.ui.tree.nodes.XDebuggerTreeNode;
 import com.intellij.xdebugger.impl.ui.tree.nodes.XValueContainerNode;
 import com.intellij.xdebugger.impl.ui.tree.nodes.XValueNodeImpl;
-import com.sun.jdi.Location;
-import com.sun.jdi.ObjectReference;
-import com.sun.jdi.ReferenceType;
-import com.sun.jdi.VirtualMachine;
+import com.sun.jdi.*;
 import net.falsetrue.heapwalker.InstanceJavaValue;
 import net.falsetrue.heapwalker.InstanceValueDescriptor;
 import net.falsetrue.heapwalker.MyStateService;
 import net.falsetrue.heapwalker.actions.TrackUsageAction;
 import net.falsetrue.heapwalker.monitorings.CreationInfo;
 import net.falsetrue.heapwalker.util.IndicatorTreeRenderer;
+import net.falsetrue.heapwalker.util.NameUtils;
 import net.falsetrue.heapwalker.util.map.ObjectMap;
 import net.falsetrue.heapwalker.util.map.ObjectTimeMap;
 import net.falsetrue.heapwalker.util.TimeManager;
@@ -47,6 +46,8 @@ import javax.swing.*;
 import java.awt.*;
 import java.util.*;
 import java.util.List;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @SuppressWarnings("UseJBColor")
 public class InstancesView extends BorderLayoutPanel implements Disposable {
@@ -72,7 +73,8 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     private int selected = -1;
     private TimeManager timeManager;
     private ObjectTimeMap objectTimeMap;
-    private Chart chart;
+    private Chart usageChart;
+    private Chart creationPlacesChart;
     private FrameList frameList;
 
     public InstancesView(Project project, TimeManager timeManager) {
@@ -129,6 +131,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         addToCenter(splitter);
         insertCreationStackPanel(tabs);
         insertUsageChart(tabs);
+        insertCreationPlacesChart(tabs);
     }
 
     private void insertCreationStackPanel(JBTabbedPane tabs) {
@@ -141,14 +144,15 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         JPanel panel = new JPanel(new BorderLayout(0, 0));
         BlackThresholdComboBox comboBox = new BlackThresholdComboBox(project);
         comboBox.setChangeListener(this::updateUsageChart);
-        chart = new Chart();
+        usageChart = new Chart();
         panel.add(comboBox, BorderLayout.NORTH);
-        panel.add(chart, BorderLayout.CENTER);
+        panel.add(usageChart, BorderLayout.CENTER);
         tabs.insertTab("Usage", null, panel, "Usage statistics", 0);
     }
 
-    private void insertCreationChart(JBScrollPane tabs) {
-
+    private void insertCreationPlacesChart(JBTabbedPane tabs) {
+        creationPlacesChart = new Chart();
+        tabs.insertTab("Creation", null, creationPlacesChart, "Creation places chart", 0);
     }
 
     private XValueMarkers<?, ?> getValueMarkers() {
@@ -237,14 +241,23 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
             chartData.add(new Chart.Item(labels[4], counts[4], COLOR_4));
             chartData.add(new Chart.Item(labels[5], counts[5], COLOR_5));
             chartData.add(new Chart.Item(labels[6], counts[6], COLOR_6));
-            chart.setData(chartData);
+            usageChart.setData(chartData);
         } else {
-            chart.clear();
+            usageChart.clear();
         }
     }
 
     private void updateCreationPlacesChart(List<ObjectReference> instances) {
-
+        creationPlacesChart.setData(instances.stream()
+            .map((reference) -> {
+                CreationInfo creationInfo = creationPlaces.get(reference);
+                return creationInfo == null ? null : creationInfo.getUserCodeLocation();
+            })
+            .collect(Collectors.groupingBy(CheatLocation::new, Collectors.reducing(0, e -> 1, Integer::sum)))
+            .entrySet()
+            .stream()
+            .map(entry -> entry.getKey().getItem(entry.getValue()))
+            .collect(Collectors.toCollection(ArrayList::new)));
     }
 
     private void updateInstances(ObjectReference reference, boolean recompute) {
@@ -263,6 +276,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
                 selected = -1;
                 XValueChildrenList list = new XValueChildrenList();
                 updateUsageChart(instances, MyStateService.getInstance(project).getBlackAgeSeconds());
+                updateCreationPlacesChart(instances);
                 if (evaluationContext == null) {
                     int i = 0;
                     for (ObjectReference instance : instances) {
@@ -368,6 +382,49 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
 
         public DebuggerTreeNodeImpl createMessageNode(String message) {
             return new DebuggerTreeNodeImpl(null, new MessageDescriptor(message));
+        }
+    }
+
+    private static class CheatLocation {
+        private final Location location;
+        private int hashCode;
+
+        private CheatLocation(Location location) {
+            this.location = location;
+            if (location == null) {
+                hashCode = 0;
+            } else {
+                hashCode = location.declaringType().hashCode() + location.lineNumber() * 31;
+            }
+        }
+
+        @Override
+        public int hashCode() {
+            return hashCode;
+        }
+
+        @SuppressWarnings("EqualsWhichDoesntCheckParameterClass")
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this) {
+                return true;
+            }
+            CheatLocation l = (CheatLocation) obj;
+            if (location == null && l.location == null) {
+                return true;
+            }
+            if (location == null || l.location == null) {
+                return false;
+            }
+            return l.location.declaringType().equals(location.declaringType())
+                && l.location.lineNumber() == location.lineNumber();
+        }
+
+        public Chart.Item getItem(int count) {
+            if (location == null) {
+                return new Chart.Item("n/a", count, JBColor.BLACK);
+            }
+            return new Chart.Item(NameUtils.locationToString(location), count);
         }
     }
 }
