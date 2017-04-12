@@ -194,7 +194,7 @@ public class MyPanel extends JBSplitter {
     }
 
     private void enableInstanceCreationMonitoring2(XDebugSession debugSession, VirtualMachine vm) {
-        creationMonitoring = new CreationMonitoring(debugSession, vm);
+        creationMonitoring = new CreationMonitoring(debugSession, vm, timeManager);
     }
 
     private void handleClassSelection(ReferenceType referenceType) {

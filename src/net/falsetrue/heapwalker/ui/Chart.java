@@ -9,6 +9,19 @@ import java.util.List;
 
 @SuppressWarnings("UseJBColor")
 public class Chart extends JPanel {
+    private static final Color[] INSERTED_COLORS = {
+        new Color(255, 0, 0),
+        new Color(255, 128, 0),
+        new Color(255, 255, 0),
+        new Color(128, 255, 0),
+        new Color(0, 255, 0),
+        new Color(0, 255, 128),
+        new Color(0, 255, 255),
+        new Color(0, 128, 255),
+        new Color(0, 0, 255),
+        new Color(128, 0, 255),
+    };
+
     private static final int CHART_WIDTH_PERCENT = 96;
     private static final int CHART_MARGIN_PERCENT = (100 - CHART_WIDTH_PERCENT) / 2;
 
@@ -118,6 +131,9 @@ public class Chart extends JPanel {
                 item.startAngle = currentSum * 360 / sum;
                 item.angle = nextAngle - item.startAngle;
                 currentSum += item.count;
+                if (item.color == null) {
+                    item.color = new Color(item.label.hashCode(), false);
+                }
             }
         }
         repaint();

@@ -21,6 +21,7 @@ import com.sun.jdi.*;
 import com.sun.jdi.event.LocatableEvent;
 import com.sun.jdi.request.BreakpointRequest;
 import com.sun.jdi.request.ClassPrepareRequest;
+import net.falsetrue.heapwalker.util.TimeManager;
 import net.falsetrue.heapwalker.util.map.ObjectMap;
 import net.falsetrue.heapwalker.util.map.ObjectTimeMap;
 import org.jetbrains.annotations.NotNull;
@@ -32,13 +33,15 @@ public class CreationMonitoring {
     private String stubFileName;
     private DebugProcessImpl debugProcess;
     private Project project;
+    private TimeManager timeManager;
     private XDebugSession debugSession;
-    private ObjectMap<List<Location>> creationPlaces;
+    private ObjectMap<CreationInfo> creationPlaces;
 
     private Set<ReferenceType> trackedTypes = new HashSet<>();
 
-    public CreationMonitoring(@NotNull XDebugSession debugSession, VirtualMachine virtualMachine) {
+    public CreationMonitoring(@NotNull XDebugSession debugSession, VirtualMachine virtualMachine, TimeManager timeManager) {
         this.debugSession = debugSession;
+        this.timeManager = timeManager;
         project = debugSession.getProject();
 
         creationPlaces = new ObjectMap<>();
@@ -116,7 +119,7 @@ public class CreationMonitoring {
                         for (int i = 0; i < thread.frameCount(); i++) {
                             stack.add(thread.frame(i).location());
                         }
-                        return stack;
+                        return new CreationInfo(stack, project, timeManager.getTime());
                     } catch (IncompatibleThreadStateException e) {
                         e.printStackTrace();
                         return null;
@@ -129,7 +132,7 @@ public class CreationMonitoring {
         }
     }
 
-    public ObjectMap<List<Location>> getCreationPlaces() {
+    public ObjectMap<CreationInfo> getCreationPlaces() {
         return creationPlaces;
     }
 }

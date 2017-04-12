@@ -1,7 +1,6 @@
 package net.falsetrue.heapwalker.ui;
 
 import com.intellij.debugger.engine.DebugProcessImpl;
-import com.intellij.debugger.engine.JavaValue;
 import com.intellij.debugger.engine.evaluation.EvaluationContext;
 import com.intellij.debugger.engine.evaluation.EvaluationContextImpl;
 import com.intellij.debugger.engine.events.DebuggerCommandImpl;
@@ -22,7 +21,6 @@ import com.intellij.xdebugger.XDebugSession;
 import com.intellij.xdebugger.frame.*;
 import com.intellij.xdebugger.impl.XDebugSessionImpl;
 import com.intellij.xdebugger.impl.evaluate.quick.XDebuggerTreeCreator;
-import com.intellij.xdebugger.impl.frame.XDebuggerFramesList;
 import com.intellij.xdebugger.impl.frame.XValueMarkers;
 import com.intellij.xdebugger.impl.ui.tree.XDebuggerTree;
 import com.intellij.xdebugger.impl.ui.tree.XDebuggerTreeListener;
@@ -37,6 +35,7 @@ import net.falsetrue.heapwalker.InstanceJavaValue;
 import net.falsetrue.heapwalker.InstanceValueDescriptor;
 import net.falsetrue.heapwalker.MyStateService;
 import net.falsetrue.heapwalker.actions.TrackUsageAction;
+import net.falsetrue.heapwalker.monitorings.CreationInfo;
 import net.falsetrue.heapwalker.util.IndicatorTreeRenderer;
 import net.falsetrue.heapwalker.util.map.ObjectMap;
 import net.falsetrue.heapwalker.util.map.ObjectTimeMap;
@@ -63,7 +62,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     private final TrackUsageAction trackUsageAction;
     private MyNodeManager myNodeManager;
     private ActionManager myActionManager;
-    private ObjectMap<List<Location>> creationPlaces;
+    private ObjectMap<CreationInfo> creationPlaces;
     private Project project;
     private XDebugSession debugSession;
     private VirtualMachine virtualMachine;
@@ -110,7 +109,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
             if (e.getPath().getPathCount() > 1 && e.getPath().getPathComponent(1) instanceof XValueNodeImpl) {
                 InstanceJavaValue javaValue = (InstanceJavaValue) ((XValueNodeImpl) e.getPath().getPathComponent(1))
                     .getValueContainer();
-                frameList.setData(creationPlaces.get(javaValue.getObjectReference()));
+                frameList.setData(creationPlaces.get(javaValue.getObjectReference()).getStack());
             }
         });
 
@@ -132,20 +131,24 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         insertUsageChart(tabs);
     }
 
+    private void insertCreationStackPanel(JBTabbedPane tabs) {
+        frameList = new FrameList(project);
+        JBScrollPane scrollPane = new JBScrollPane(frameList);
+        tabs.insertTab("Stack", null, scrollPane, "Stack frame on object creation", 0);
+    }
+
     private void insertUsageChart(JBTabbedPane tabs) {
         JPanel panel = new JPanel(new BorderLayout(0, 0));
         BlackThresholdComboBox comboBox = new BlackThresholdComboBox(project);
-        comboBox.setChangeListener(this::updateChart);
+        comboBox.setChangeListener(this::updateUsageChart);
         chart = new Chart();
         panel.add(comboBox, BorderLayout.NORTH);
         panel.add(chart, BorderLayout.CENTER);
         tabs.insertTab("Usage", null, panel, "Usage statistics", 0);
     }
 
-    private void insertCreationStackPanel(JBTabbedPane tabs) {
-        frameList = new FrameList(project);
-        JBScrollPane scrollPane = new JBScrollPane(frameList);
-        tabs.insertTab("Stack", null, scrollPane, "Stack frame on object creation", 0);
+    private void insertCreationChart(JBScrollPane tabs) {
+
     }
 
     private XValueMarkers<?, ?> getValueMarkers() {
@@ -183,7 +186,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     }
 
     public void update(ReferenceType referenceType,
-                       ObjectMap<List<Location>> creationPlaces,
+                       ObjectMap<CreationInfo> creationPlaces,
                        ObjectReference reference) {
         this.referenceType = referenceType;
         this.creationPlaces = creationPlaces;
@@ -199,7 +202,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         SwingUtilities.invokeLater(instancesTree.getRoot()::clearChildren);
     }
 
-    private void updateChart(int blackAge) {
+    private void updateUsageChart(int blackAge) {
         if (virtualMachine == null || debugProcess == null || debugProcess.isDetached() || referenceType == null) {
             return;
         }
@@ -207,12 +210,12 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
             @Override
             protected void action() throws Exception {
                 List<ObjectReference> instances = referenceType.instances(0);
-                updateChart(instances, blackAge);
+                updateUsageChart(instances, blackAge);
             }
         });
     }
 
-    private void updateChart(List<ObjectReference> instances, int blackAge) {
+    private void updateUsageChart(List<ObjectReference> instances, int blackAge) {
         if (timeManager.isPaused() && trackUsageAction.isSelected()) {
             blackAge *= 1000;
             int[] counts = new int[7];
@@ -240,6 +243,10 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         }
     }
 
+    private void updateCreationPlacesChart(List<ObjectReference> instances) {
+
+    }
+
     private void updateInstances(ObjectReference reference, boolean recompute) {
         if (virtualMachine == null || debugProcess == null || debugProcess.isDetached()) {
             return;
@@ -255,7 +262,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
 
                 selected = -1;
                 XValueChildrenList list = new XValueChildrenList();
-                updateChart(instances, MyStateService.getInstance(project).getBlackAgeSeconds());
+                updateUsageChart(instances, MyStateService.getInstance(project).getBlackAgeSeconds());
                 if (evaluationContext == null) {
                     int i = 0;
                     for (ObjectReference instance : instances) {
