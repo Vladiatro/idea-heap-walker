@@ -16,31 +16,31 @@ import org.jetbrains.annotations.Nullable;
 )
 public class MyStateService implements PersistentStateComponent<MyStateService.State> {
     private MyPanel panel;
-    private int blackAgeSeconds = 60;
+    private int blackAgeMilliseconds = 60;
 
     @Nullable
     @Override
     public State getState() {
         State state = new State();
-        state.setBlackAgeSeconds(blackAgeSeconds);
+        state.setBlackAgeSeconds(blackAgeMilliseconds);
         return state;
     }
 
     @Override
     public void loadState(State state) {
-        blackAgeSeconds = state.getBlackAgeSeconds();
+        blackAgeMilliseconds = state.getBlackAgeSeconds();
     }
 
     public static MyStateService getInstance(@NotNull Project project) {
         return ServiceManager.getService(project, MyStateService.class);
     }
 
-    public int getBlackAgeSeconds() {
-        return blackAgeSeconds;
+    public int getBlackAgeMilliseconds() {
+        return blackAgeMilliseconds;
     }
 
-    public void setBlackAgeSeconds(int blackAgeSeconds) {
-        this.blackAgeSeconds = blackAgeSeconds;
+    public void setBlackAgeMilliseconds(int blackAgeMilliseconds) {
+        this.blackAgeMilliseconds = blackAgeMilliseconds;
     }
 
     public void setPanel(@Nullable MyPanel panel) {

@@ -39,7 +39,7 @@ public class IndicatorTreeRenderer implements TreeCellRenderer {
             InstanceJavaValue javaValue = (InstanceJavaValue) ((XValueNodeImpl) value).getValueContainer();
             long time = objectTimeMap.get(javaValue.getObjectReference());
             Color color;
-            int blackAge = MyStateService.getInstance(project).getBlackAgeSeconds() * 1000;
+            int blackAge = MyStateService.getInstance(project).getBlackAgeMilliseconds();
             YoPanel panel = new YoPanel();
             if (time == -1) {
                 color = Color.BLACK;
@@ -47,7 +47,7 @@ public class IndicatorTreeRenderer implements TreeCellRenderer {
             } else {
                 time = timeManager.getTime() - time;
                 color = getColor((int) (time * 765 / blackAge));
-                panel.setToolTipText("Last usage: " + NameUtils.minsSecs((int) (time / 1000)));
+                panel.setToolTipText("Last usage: " + NameUtils.minsSecs(time));
             }
             panel.add(new Indicator(color));
             panel.add(component);

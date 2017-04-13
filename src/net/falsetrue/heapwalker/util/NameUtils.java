@@ -40,19 +40,25 @@ public class NameUtils {
             location.declaringType().name());
     }
 
-    public static String minsSecs(int seconds) {
-        if (seconds == 0) {
+    public static String minsSecs(long milliseconds) {
+        if (milliseconds == 0) {
             return "just now";
         }
         StringBuilder builder = new StringBuilder();
-        if (seconds >= 60) {
-            builder.append(seconds / 60).append(" min");
-            if (seconds % 60 != 0) {
+        if (milliseconds >= 60000) {
+            builder.append(milliseconds / 60000).append(" min");
+            if (milliseconds / 1000 % 60 != 0) {
                 builder.append(" ");
             }
         }
-        if (seconds % 60 != 0) {
-            builder.append(seconds % 60).append(" sec");
+        if (milliseconds / 1000 % 60 != 0) {
+            builder.append(milliseconds / 1000 % 60).append(" sec");
+            if (milliseconds < 3000 && milliseconds % 1000 != 0) {
+                builder.append(" ");
+            }
+        }
+        if (milliseconds < 3000 && milliseconds % 1000 != 0) {
+            builder.append(milliseconds % 1000).append(" ms");
         }
         return builder.toString();
     }

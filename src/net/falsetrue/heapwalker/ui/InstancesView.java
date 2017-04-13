@@ -194,7 +194,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         usageChart = new Chart<>();
         usageChart.setNullObject(-1);
         usageChart.setItemSelectedListener((object, position) -> {
-            int blackAge = MyStateService.getInstance(project).getBlackAgeSeconds() * 1000;
+            int blackAge = MyStateService.getInstance(project).getBlackAgeMilliseconds();
             if (usageFilter != null) {
                 clearFilters(usageFilter);
             }
@@ -294,7 +294,6 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
 
     private void updateUsageChart(List<ObjectReference> instances, int blackAge) {
         if (timeManager.isPaused() && trackUsageAction.isSelected()) {
-            blackAge *= 1000;
             int[] counts = new int[7];
             in: for (ObjectReference instance : instances) {
                 for (Predicate<ObjectReference> filter : referenceFilters) {
@@ -372,7 +371,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
 
                 selected = -1;
                 XValueChildrenList list = new XValueChildrenList();
-                updateUsageChart(instances, MyStateService.getInstance(project).getBlackAgeSeconds());
+                updateUsageChart(instances, MyStateService.getInstance(project).getBlackAgeMilliseconds());
                 updateCreationPlacesChart(instances);
                 int i = 0;
                 Iterator<ObjectReference> iterator;
@@ -432,31 +431,35 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     }
 
     private void fillUsageChart(int[] counts) {
-        int blackAge = MyStateService.getInstance(project).getBlackAgeSeconds();
+        int blackAge = MyStateService.getInstance(project).getBlackAgeMilliseconds();
         List<Chart<Integer>.Item> items = new ArrayList<>();
         for (int i = 0; i < 6; i++) {
             String label;
             int first = blackAge * i / 6;
             int second = blackAge * (i + 1) / 6;
             if (first == 0) {
-                if (second < 60) {
+                if (second < 1000) {
+                    label = "&lt;" + millis(second);
+                } else if (second < 60000) {
                     label = "&lt;" + seconds(second);
                 } else {
                     label = "&lt;" + minsSecs(second);
                 }
-            } else if (first < 60 && second < 60) {
-                label = first + "-" + second + " seconds";
-            } else if (first % 60 == 0 && second % 60 == 0) {
-                label = (first / 60) + "-" + (second / 60) + " minutes";
+            } else if (first < 60000 && second < 60000) {
+                label = String.format("%.2f-%.2f seconds", first / 1000.0, second / 1000.0);
+            } else if (first % 60000 == 0 && second % 60000 == 0) {
+                label = (first / 60000) + "-" + (second / 60000) + " minutes";
             } else {
                 label = minsSecs(first) + " - " + minsSecs(second);
             }
             items.add(usageChart.newItem(i, label, counts[i], USAGE_COLORS[i]));
         }
         String label;
-        if (blackAge < 60) {
+        if (blackAge < 1000) {
+            label = ">" + millis(blackAge);
+        } else if (blackAge < 60000) {
             label = ">" + seconds(blackAge) + " or n/a";
-        } else if (blackAge % 60 == 0) {
+        } else if (blackAge / 1000 % 60 == 0) {
             label = ">" + minutes(blackAge) + " or n/a";
         } else {
             label = ">" + minsSecs(blackAge) + " or n/a";
@@ -482,15 +485,19 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         }
     }
 
-    private String seconds(int seconds) {
-        if (seconds % 10 == 1) {
-            return seconds + " second";
-        }
-        return seconds + " seconds";
+    private String millis(int milliseconds) {
+        return milliseconds + " millis";
     }
 
-    private String minutes(int seconds) {
-        int minutes = seconds / 60;
+    private String seconds(int milliseconds) {
+        if (milliseconds / 1000 % 10 == 1) {
+            return milliseconds / 1000 + " second";
+        }
+        return milliseconds / 1000 + " seconds";
+    }
+
+    private String minutes(int milliseconds) {
+        int minutes = milliseconds / 60000;
         if (minutes % 10 == 1) {
             return minutes + " minute";
         }

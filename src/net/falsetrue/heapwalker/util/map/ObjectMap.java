@@ -7,7 +7,7 @@ import java.util.function.Supplier;
 // @todo synchronized?
 @SuppressWarnings("Duplicates")
 public class ObjectMap<T> {
-    private static final int INITIAL_TABLE_SIZE = 1 << 15;
+    private static final int INITIAL_TABLE_SIZE = 1 << 20;
     public static final int ENLARGE_PER_EIGHT = 6;
 
     private int tableLength = INITIAL_TABLE_SIZE;
@@ -18,7 +18,7 @@ public class ObjectMap<T> {
         clear();
     }
 
-    public void put(ObjectReference reference, T value) {
+    public synchronized void put(ObjectReference reference, T value) {
         if (reference == null) {
             return;
         }
@@ -41,7 +41,7 @@ public class ObjectMap<T> {
         count++;
     }
 
-    public void putIfAbsent(ObjectReference reference, Supplier<T> valueSupplier) {
+    public synchronized void putIfAbsent(ObjectReference reference, Supplier<T> valueSupplier) {
         if (reference == null) {
             return;
         }
@@ -64,7 +64,7 @@ public class ObjectMap<T> {
     }
 
     @SuppressWarnings("unchecked")
-    public T get(ObjectReference reference) {
+    public synchronized T get(ObjectReference reference) {
         int pos = (int) (reference.uniqueID() % tableLength);
         Node node = table[pos];
         while (node != null) {
