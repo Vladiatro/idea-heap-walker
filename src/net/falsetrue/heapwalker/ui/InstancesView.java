@@ -51,6 +51,8 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import static net.falsetrue.heapwalker.util.NameUtils.minsSecs;
+
 @SuppressWarnings("UseJBColor")
 public class InstancesView extends BorderLayoutPanel implements Disposable {
     private static final int INSTANCES_LIMIT = 10000;
@@ -123,7 +125,8 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
             if (e.getPath().getPathCount() > 1 && e.getPath().getPathComponent(1) instanceof XValueNodeImpl) {
                 InstanceJavaValue javaValue = (InstanceJavaValue) ((XValueNodeImpl) e.getPath().getPathComponent(1))
                     .getValueContainer();
-                frameList.setData(creationPlaces.get(javaValue.getObjectReference()).getStack());
+                CreationInfo creationInfo = creationPlaces.get(javaValue.getObjectReference());
+                frameList.setData(creationInfo == null ? null : creationInfo.getStack());
             }
         });
 
@@ -261,6 +264,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         if (instancesTree != null && instancesTree.getRoot() != null) {
             SwingUtilities.invokeLater(() -> instancesTree.getRoot().clearChildren());
         }
+        clearFilters();
         updateInstances(reference, true);
     }
 
@@ -461,6 +465,12 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         usageChart.setData(items);
     }
 
+    private void clearFilters() {
+        filterCharts.forEach(Chart::unselectWithoutListener);
+        filterCharts.clear();
+        referenceFilters.clear();
+    }
+
     private void clearFilters(Predicate<ObjectReference> from) {
         for (int i = referenceFilters.size() - 1; i >= 0; i--) {
             Predicate<ObjectReference> removed = referenceFilters.remove(referenceFilters.size() - 1);
@@ -485,20 +495,6 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
             return minutes + " minute";
         }
         return minutes + " minutes";
-    }
-
-    private String minsSecs(int seconds) {
-        StringBuilder builder = new StringBuilder();
-        if (seconds >= 60) {
-            builder.append(seconds / 60).append(" min");
-            if (seconds % 60 != 0) {
-                builder.append(" ");
-            }
-        }
-        if (seconds % 60 != 0) {
-            builder.append(seconds % 60).append(" sec");
-        }
-        return builder.toString();
     }
 
     @Override

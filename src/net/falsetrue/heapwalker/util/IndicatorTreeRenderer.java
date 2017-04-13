@@ -40,13 +40,15 @@ public class IndicatorTreeRenderer implements TreeCellRenderer {
             long time = objectTimeMap.get(javaValue.getObjectReference());
             Color color;
             int blackAge = MyStateService.getInstance(project).getBlackAgeSeconds() * 1000;
+            YoPanel panel = new YoPanel();
             if (time == -1) {
                 color = Color.BLACK;
+                panel.setToolTipText("No recorded usage information");
             } else {
                 time = timeManager.getTime() - time;
                 color = getColor((int) (time * 765 / blackAge));
+                panel.setToolTipText("Last usage: " + NameUtils.minsSecs((int) (time / 1000)));
             }
-            YoPanel panel = new YoPanel();
             panel.add(new Indicator(color));
             panel.add(component);
             return panel;

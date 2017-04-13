@@ -39,4 +39,21 @@ public class NameUtils {
         return String.format("%s:%d, %s", location.method().name(), location.lineNumber(),
             location.declaringType().name());
     }
+
+    public static String minsSecs(int seconds) {
+        if (seconds == 0) {
+            return "just now";
+        }
+        StringBuilder builder = new StringBuilder();
+        if (seconds >= 60) {
+            builder.append(seconds / 60).append(" min");
+            if (seconds % 60 != 0) {
+                builder.append(" ");
+            }
+        }
+        if (seconds % 60 != 0) {
+            builder.append(seconds % 60).append(" sec");
+        }
+        return builder.toString();
+    }
 }

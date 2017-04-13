@@ -9,6 +9,7 @@ import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
 import java.awt.geom.Arc2D;
 import java.awt.geom.GeneralPath;
+import java.util.Collections;
 import java.util.List;
 
 @SuppressWarnings("UseJBColor")
