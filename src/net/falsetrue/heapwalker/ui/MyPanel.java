@@ -39,7 +39,6 @@ public class MyPanel extends JBSplitter {
     private TimeManager timeManager;
     private volatile List<ClassInstance> classInstances;
     private volatile boolean debugActive = false;
-    private CreationMonitoring creationMonitoring;
 
     private DebugProcessListener listener;
     private ScheduledFuture<?> updaterHandle;
@@ -111,8 +110,6 @@ public class MyPanel extends JBSplitter {
                 e.printStackTrace();
                 return;
             }
-            enableInstanceCreationMonitoring2(debugSession, vm);
-
 //                SwingUtilities.invokeLater(() -> {
             (new ClickListener() {
                 @Override
@@ -193,12 +190,8 @@ public class MyPanel extends JBSplitter {
         }
     }
 
-    private void enableInstanceCreationMonitoring2(XDebugSession debugSession, VirtualMachine vm) {
-        creationMonitoring = new CreationMonitoring(debugSession, vm, timeManager);
-    }
-
     private void handleClassSelection(ReferenceType referenceType) {
-        instancesView.update(referenceType, creationMonitoring.getCreationPlaces(), null);
+        instancesView.update(referenceType, null);
     }
 
     public void showReference(ObjectReference reference) {
@@ -209,7 +202,7 @@ public class MyPanel extends JBSplitter {
                     table.clearSelection();
                     table.addRowSelectionInterval(i, i);
                     table.scrollRectToVisible(table.getCellRect(i, 0, true));
-                    instancesView.update(referenceType, creationMonitoring.getCreationPlaces(), reference);
+                    instancesView.update(referenceType, reference);
                     break;
                 }
             }

@@ -33,6 +33,7 @@ import com.sun.jdi.*;
 import net.falsetrue.heapwalker.InstanceJavaValue;
 import net.falsetrue.heapwalker.InstanceValueDescriptor;
 import net.falsetrue.heapwalker.MyStateService;
+import net.falsetrue.heapwalker.actions.TrackCreationAction;
 import net.falsetrue.heapwalker.actions.TrackUsageAction;
 import net.falsetrue.heapwalker.monitorings.CreationInfo;
 import net.falsetrue.heapwalker.util.IndicatorTreeRenderer;
@@ -69,9 +70,9 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
 
     private final XDebuggerTree instancesTree;
     private final TrackUsageAction trackUsageAction;
+    private final TrackCreationAction trackCreationAction;
     private MyNodeManager myNodeManager;
     private ActionManager myActionManager;
-    private ObjectMap<CreationInfo> creationPlaces;
     private Project project;
     private XDebugSession debugSession;
     private VirtualMachine virtualMachine;
@@ -81,6 +82,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     private int selected = -1;
     private TimeManager timeManager;
     private ObjectTimeMap objectTimeMap;
+    private ObjectMap<CreationInfo> creationPlaces;
     private Chart<Integer> usageChart;
     private Chart<Itemable> creationPlacesChart;
     private FrameList frameList;
@@ -102,6 +104,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
             null, markers);
         instancesTree = (XDebuggerTree)treeCreator.createTree(getTreeRootDescriptor());
         objectTimeMap = new ObjectTimeMap();
+        creationPlaces = new ObjectMap<>();
         if (!(instancesTree.getCellRenderer() instanceof IndicatorTreeRenderer)) {
             instancesTree.setCellRenderer(new IndicatorTreeRenderer(project,
                 instancesTree.getCellRenderer(), objectTimeMap, timeManager));
@@ -133,7 +136,9 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         myActionManager = ActionManager.getInstance();
         DefaultActionGroup actionGroup = new DefaultActionGroup();
         trackUsageAction = new TrackUsageAction();
+        trackCreationAction = new TrackCreationAction();
         actionGroup.add(trackUsageAction);
+        actionGroup.add(trackCreationAction);
         ActionToolbar tb = myActionManager.createActionToolbar("InstancesBar", actionGroup, false);
         tb.setTargetComponent(this);
         addToLeft(tb.getComponent());
@@ -255,12 +260,11 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     }
 
     public void update(ReferenceType referenceType,
-                       ObjectMap<CreationInfo> creationPlaces,
                        ObjectReference reference) {
         this.referenceType = referenceType;
-        this.creationPlaces = creationPlaces;
         debugSession = debugProcess.getSession().getXDebugSession();
         trackUsageAction.setReferenceType(objectTimeMap, debugSession, referenceType, timeManager);
+        trackCreationAction.setReferenceType(creationPlaces, debugSession, referenceType, timeManager);
         if (instancesTree != null && instancesTree.getRoot() != null) {
             SwingUtilities.invokeLater(() -> instancesTree.getRoot().clearChildren());
         }

@@ -8,32 +8,35 @@ import com.intellij.xdebugger.XDebugSession;
 import com.sun.jdi.ArrayType;
 import com.sun.jdi.ReferenceType;
 import net.falsetrue.heapwalker.monitorings.AccessMonitoring;
-import net.falsetrue.heapwalker.util.map.ObjectTimeMap;
+import net.falsetrue.heapwalker.monitorings.CreationInfo;
+import net.falsetrue.heapwalker.monitorings.CreationMonitoring;
 import net.falsetrue.heapwalker.util.TimeManager;
+import net.falsetrue.heapwalker.util.map.ObjectMap;
+import net.falsetrue.heapwalker.util.map.ObjectTimeMap;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.HashMap;
 import java.util.Map;
 
-public class TrackUsageAction extends ToggleAction {
+public class TrackCreationAction extends ToggleAction {
     private boolean mySelected = false;
-    private AccessMonitoring currentMonitoring;
-    private Map<ReferenceType, AccessMonitoring> monitorings = new HashMap<>();
+    private CreationMonitoring currentMonitoring;
+    private Map<ReferenceType, CreationMonitoring> monitorings = new HashMap<>();
     private boolean enabled;
 
-    public TrackUsageAction() {
+    public TrackCreationAction() {
         Presentation templatePresentation = getTemplatePresentation();
-        templatePresentation.setIcon(AllIcons.Vcs.History);
-        templatePresentation.setText("Track usage");
+        templatePresentation.setIcon(AllIcons.Actions.New);
+        templatePresentation.setText("Track creation");
         templatePresentation.setDescription(null);
     }
 
-    public void setReferenceType(ObjectTimeMap objectTimeMap,
+    public void setReferenceType(ObjectMap<CreationInfo> creationPlaces,
                                  XDebugSession debugSession,
                                  ReferenceType referenceType,
                                  TimeManager timeManager) {
         currentMonitoring = monitorings.computeIfAbsent(referenceType,
-            k -> new AccessMonitoring(debugSession, referenceType, timeManager, objectTimeMap));
+            k -> new CreationMonitoring(debugSession, referenceType, timeManager, creationPlaces));
         mySelected = currentMonitoring.isEnabled();
         enabled = !(referenceType instanceof ArrayType);
     }

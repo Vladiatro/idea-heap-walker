@@ -33,18 +33,21 @@ public class CreationMonitoring {
     private String stubFileName;
     private DebugProcessImpl debugProcess;
     private Project project;
+    private final ReferenceType referenceType;
     private TimeManager timeManager;
-    private XDebugSession debugSession;
     private ObjectMap<CreationInfo> creationPlaces;
+    private boolean enabled;
+    private boolean started;
 
-    private Set<ReferenceType> trackedTypes = new HashSet<>();
-
-    public CreationMonitoring(@NotNull XDebugSession debugSession, VirtualMachine virtualMachine, TimeManager timeManager) {
-        this.debugSession = debugSession;
+    public CreationMonitoring(@NotNull XDebugSession debugSession,
+                              ReferenceType referenceType,
+                              TimeManager timeManager,
+                              ObjectMap<CreationInfo> creationPlaces) {
+        this.referenceType = referenceType;
         this.timeManager = timeManager;
         project = debugSession.getProject();
 
-        creationPlaces = new ObjectMap<>();
+        this.creationPlaces = creationPlaces;
 
         debugProcess = (DebugProcessImpl) DebuggerManager.getInstance(project)
             .getDebugProcess(debugSession.getDebugProcess().getProcessHandler());
@@ -53,18 +56,9 @@ public class CreationMonitoring {
             stubFileName = JavaPsiFacade.getInstance(project).findClass("java.lang.Object",
                 GlobalSearchScope.everythingScope(project)).getContainingFile().getName();
         });
-
-        new ClassPrepareResolver().createRequest();
-        for (ReferenceType referenceType : virtualMachine.allClasses()) {
-            startMonitoring(referenceType);
-        }
     }
 
-    private void startMonitoring(ReferenceType type) {
-        if (trackedTypes.contains(type)) {
-            return;
-        }
-        trackedTypes.add(type);
+    private void startMonitoring() {
         XLineBreakpointImpl<JavaLineBreakpointProperties> bpn = new XLineBreakpointImpl<>(
             new JavaLineBreakpointType(),
             ((XDebuggerManagerImpl) XDebuggerManagerImpl.getInstance(project)).getBreakpointManager(),
@@ -74,28 +68,12 @@ public class CreationMonitoring {
         debugProcess.getManagerThread().invoke(new DebuggerCommandImpl() {
             @Override
             protected void action() throws Exception {
-                new BreakpointsResolver(project, bpn).createRequestForPreparedClass(debugProcess, type);
+                new BreakpointsResolver(project, bpn).createRequestForPreparedClass(debugProcess, referenceType);
             }
         });
     }
 
-    private class ClassPrepareResolver implements ClassPrepareRequestor {
-        private List<ClassPrepareRequest> classPrepareRequests = new ArrayList<>();
-
-        void createRequest() {
-            debugProcess.getRequestsManager().createClassPrepareRequest(this, "*").enable();
-        }
-
-        @Override
-        public void processClassPrepare(DebugProcess debuggerProcess, ReferenceType referenceType) {
-//            System.out.println("Preparation of " + referenceType);
-            startMonitoring(referenceType);
-        }
-    }
-
     private class BreakpointsResolver extends LineBreakpoint<JavaLineBreakpointProperties> {
-//        private List<BreakpointRequest> constructorRequests = new ArrayList<>();
-
         BreakpointsResolver(Project project, XBreakpoint xBreakpoint) {
             super(project, xBreakpoint);
         }
@@ -110,6 +88,11 @@ public class CreationMonitoring {
         }
 
         public boolean processLocatableEvent(SuspendContextCommandImpl action, LocatableEvent event) throws EventProcessingException {
+            synchronized (CreationMonitoring.this) {
+                if (!enabled) {
+                    return false;
+                }
+            }
             try {
                 ThreadReference thread = event.thread();
                 ObjectReference object = thread.frame(0).thisObject();
@@ -132,7 +115,15 @@ public class CreationMonitoring {
         }
     }
 
-    public ObjectMap<CreationInfo> getCreationPlaces() {
-        return creationPlaces;
+    public synchronized boolean isEnabled() {
+        return enabled;
+    }
+
+    public synchronized void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+        if (!started) {
+            started = true;
+            startMonitoring();
+        }
     }
 }
