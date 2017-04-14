@@ -1,6 +1,7 @@
 package net.falsetrue.heapwalker.ui;
 
 import com.intellij.debugger.DebuggerManager;
+import com.intellij.debugger.engine.DebugProcess;
 import com.intellij.debugger.engine.DebugProcessImpl;
 import com.intellij.debugger.engine.DebugProcessListener;
 import com.intellij.debugger.engine.SuspendContext;
@@ -44,18 +45,18 @@ public class MyPanel extends JBSplitter {
     private ScheduledFuture<?> updaterHandle;
 
     private VirtualMachine getVM(DebugProcessImpl debugProcess) throws InterruptedException {
-        BlockingQueue<ProxyResult> proxyQueue = new ArrayBlockingQueue<>(1);
+        BlockingQueue<VirtualMachineProxy> proxyQueue = new ArrayBlockingQueue<>(1);
         debugProcess.getManagerThread().invoke(new DebuggerCommandImpl() {
             @Override
             protected void action() throws Exception {
                 try {
-                    proxyQueue.add(new ProxyResult(debugProcess.getVirtualMachineProxy()));
-                } catch (Exception e) {
-                    proxyQueue.put(new ProxyResult(null));
+                    proxyQueue.add(debugProcess.getVirtualMachineProxy());
+                } catch (VMDisconnectedException e) {
+                    throw new RuntimeException("Can't connect to VirtualMachine");
                 }
             }
         });
-        VirtualMachineProxy proxy = proxyQueue.take().proxy;
+        VirtualMachineProxy proxy = proxyQueue.take();
         if (proxy == null) {
             return null;
         }
@@ -98,86 +99,90 @@ public class MyPanel extends JBSplitter {
                         .getDebugProcess()
                         .getProcessHandler()
                 );
-
-            VirtualMachine vm;
-            try {
-                vm = getVM(debugProcess);
-                if (vm == null) {
-                    return;
-                }
-                instancesView.setVirtualMachine(vm);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-                return;
-            }
-//                SwingUtilities.invokeLater(() -> {
-            (new ClickListener() {
+            debugProcess.addDebugProcessListener(new DebugProcessListener() {
                 @Override
-                public boolean onClick(@NotNull MouseEvent event, int clickCount) {
-                    if (clickCount == 1) {
-                        handleClassSelection(classInstances.get(table.getSelectedRow()).type);
-                        return true;
+                public void processAttached(DebugProcess process) {
+                    VirtualMachine vm;
+                    try {
+                        vm = getVM(debugProcess);
+                        if (vm == null) {
+                            return;
+                        }
+                        instancesView.setVirtualMachine(vm);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                        return;
                     }
-                    return false;
-                }
-            }).installOn(table);
+//                SwingUtilities.invokeLater(() -> {
+                    (new ClickListener() {
+                        @Override
+                        public boolean onClick(@NotNull MouseEvent event, int clickCount) {
+                            if (clickCount == 1) {
+                                handleClassSelection(classInstances.get(table.getSelectedRow()).type);
+                                return true;
+                            }
+                            return false;
+                        }
+                    }).installOn(table);
 //                });
 
-            debugActive = true;
-            if (listener != null) {
-                debugProcess.removeDebugProcessListener(listener);
-            }
-            debugProcess.addDebugProcessListener(listener = new DebugProcessListener() {
-                @Override
-                public void paused(SuspendContext suspendContext) {
-                    timeManager.pause();
-                    if (table.getSelectedRow() != -1 && classInstances.get(table.getSelectedRow()) != null) {
-                        handleClassSelection(classInstances.get(table.getSelectedRow()).type);
+                    debugActive = true;
+                    if (listener != null) {
+                        debugProcess.removeDebugProcessListener(listener);
                     }
-                }
+                    debugProcess.addDebugProcessListener(listener = new DebugProcessListener() {
+                        @Override
+                        public void paused(SuspendContext suspendContext) {
+                            timeManager.pause();
+                            if (table.getSelectedRow() != -1 && classInstances.get(table.getSelectedRow()) != null) {
+                                handleClassSelection(classInstances.get(table.getSelectedRow()).type);
+                            }
+                        }
 
-                @Override
-                public void resumed(SuspendContext suspendContext) {
-                    timeManager.resume();
-                    if (table.getSelectedRow() != -1 && classInstances.get(table.getSelectedRow()) != null) {
-                        handleClassSelection(classInstances.get(table.getSelectedRow()).type);
-                    }
+                        @Override
+                        public void resumed(SuspendContext suspendContext) {
+                            timeManager.resume();
+                            if (table.getSelectedRow() != -1 && classInstances.get(table.getSelectedRow()) != null) {
+                                handleClassSelection(classInstances.get(table.getSelectedRow()).type);
+                            }
+                        }
+                    });
+                    instancesView.setDebugProcess(debugProcess);
+
+                    ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+                    updaterHandle = scheduler.scheduleAtFixedRate(() -> {
+                        try {
+                            List<ReferenceType> classes = vm.allClasses();
+                            ReferenceType selected = null;
+                            if (table.getSelectedRow() != -1) {
+                                selected = classInstances.get(table.getSelectedRow()).type;
+                            }
+                            long[] counts = vm.instanceCounts(classes);
+                            Iterator<ReferenceType> iterator = classes.iterator();
+                            classInstances = new ArrayList<>();
+                            for (long count : counts) {
+                                classInstances.add(new ClassInstance(iterator.next(), count));
+                            }
+                            Collections.sort(classInstances);
+                            model.clear();
+                            int index = 0;
+                            for (ClassInstance classInstance : classInstances) {
+                                model.add(classInstance.type.name(), classInstance.count);
+                                if (classInstance.type.equals(selected)) {
+                                    int finalIndex = index;
+                                    SwingUtilities.invokeLater(() -> table.setRowSelectionInterval(finalIndex, finalIndex));
+                                }
+                                index++;
+                            }
+                            SwingUtilities.invokeLater(() -> table.updateUI());
+                            String plural = classes.size() % 10 == 1 ? "class" : "classes";
+                            countLabel.setText(classes.size() + " loaded " + plural);
+                        } catch (VMDisconnectedException e) {
+                            updaterHandle.cancel(false);
+                        }
+                    }, 0, UPDATE_TIME, MILLISECONDS);
                 }
             });
-            instancesView.setDebugProcess(debugProcess);
-
-            ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-            updaterHandle = scheduler.scheduleAtFixedRate(() -> {
-                try {
-                    List<ReferenceType> classes = vm.allClasses();
-                    ReferenceType selected = null;
-                    if (table.getSelectedRow() != -1) {
-                        selected = classInstances.get(table.getSelectedRow()).type;
-                    }
-                    long[] counts = vm.instanceCounts(classes);
-                    Iterator<ReferenceType> iterator = classes.iterator();
-                    classInstances = new ArrayList<>();
-                    for (long count : counts) {
-                        classInstances.add(new ClassInstance(iterator.next(), count));
-                    }
-                    Collections.sort(classInstances);
-                    model.clear();
-                    int index = 0;
-                    for (ClassInstance classInstance : classInstances) {
-                        model.add(classInstance.type.name(), classInstance.count);
-                        if (classInstance.type.equals(selected)) {
-                            int finalIndex = index;
-                            SwingUtilities.invokeLater(() -> table.setRowSelectionInterval(finalIndex, finalIndex));
-                        }
-                        index++;
-                    }
-                    SwingUtilities.invokeLater(() -> table.updateUI());
-                    String plural = classes.size() % 10 == 1 ? "class" : "classes";
-                    countLabel.setText(classes.size() + " loaded " + plural);
-                } catch (VMDisconnectedException e) {
-                    updaterHandle.cancel(false);
-                }
-            }, 0, UPDATE_TIME, MILLISECONDS);
         }
     }
 
@@ -226,14 +231,6 @@ public class MyPanel extends JBSplitter {
         @Override
         public String toString() {
             return type.name() + " - " + count;
-        }
-    }
-
-    class ProxyResult {
-        private VirtualMachineProxy proxy;
-
-        public ProxyResult(VirtualMachineProxy proxy) {
-            this.proxy = proxy;
         }
     }
 }
