@@ -16,7 +16,7 @@ import org.jetbrains.annotations.Nullable;
 )
 public class MyStateService implements PersistentStateComponent<MyStateService.State> {
     private MyPanel panel;
-    private int blackAgeMilliseconds = 60;
+    private int blackAgeMilliseconds = 60000;
 
     @Nullable
     @Override

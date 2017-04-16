@@ -9,9 +9,7 @@ import com.intellij.debugger.engine.events.DebuggerCommandImpl;
 import com.intellij.debugger.engine.jdi.VirtualMachineProxy;
 import com.intellij.debugger.jdi.VirtualMachineProxyImpl;
 import com.intellij.openapi.project.Project;
-import com.intellij.ui.ClickListener;
-import com.intellij.ui.JBSplitter;
-import com.intellij.ui.ScrollPaneFactory;
+import com.intellij.ui.*;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.ui.components.BorderLayoutPanel;
@@ -20,6 +18,7 @@ import com.sun.jdi.*;
 import net.falsetrue.heapwalker.monitorings.CreationMonitoring;
 import net.falsetrue.heapwalker.util.TimeManager;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.event.MouseEvent;
@@ -80,6 +79,47 @@ public class MyPanel extends JBSplitter {
         table.getColumnModel().getColumn(0).setMaxWidth(900);
 //        XDebuggerManager.getInstance(project).getCurrentSession().getUI().
         table.getColumnModel().getColumn(1).setMaxWidth(300);
+
+        SpeedSearchBase<JBTable> speedSearch = new SpeedSearchBase<JBTable>(table) {
+            @Override
+            protected int getSelectedIndex() {
+                return table.getSelectedRow();
+            }
+
+            @Override
+            protected Object[] getAllElements() {
+                synchronized (model) {
+                    final int count = model.getRowCount();
+                    Object[] elements = new Object[count];
+                    for (int idx = 0; idx < count; idx++) {
+                        elements[idx] = model.getValueAt(idx, 0);
+                    }
+                    return elements;
+                }
+            }
+
+            @Nullable
+            @Override
+            protected String getElementText(Object element) {
+                return (String) element;
+            }
+
+            @Override
+            protected void selectElement(Object element, String selectedText) {
+                final int count = model.getRowCount();
+                for (int row = 0; row < count; row++) {
+                    if (element.equals(model.getValueAt(row, 0))) {
+                        final int viewRow = table.convertRowIndexToView(row);
+                        table.getSelectionModel().setSelectionInterval(viewRow, viewRow);
+                        TableUtil.scrollSelectionToVisible(table);
+                        handleClassSelection(classInstances.get(table.getSelectedRow()).type);
+                        break;
+                    }
+                }
+            }
+        };
+        speedSearch.setComparator(new SpeedSearchComparator(false));
+
         JScrollPane tableScroll = ScrollPaneFactory.createScrollPane(table, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 
         instancesView = new InstancesView(project, timeManager);
@@ -164,15 +204,18 @@ public class MyPanel extends JBSplitter {
                                 classInstances.add(new ClassInstance(iterator.next(), count));
                             }
                             Collections.sort(classInstances);
-                            model.clear();
-                            int index = 0;
-                            for (ClassInstance classInstance : classInstances) {
-                                model.add(classInstance.type.name(), classInstance.count);
-                                if (classInstance.type.equals(selected)) {
-                                    int finalIndex = index;
-                                    SwingUtilities.invokeLater(() -> table.setRowSelectionInterval(finalIndex, finalIndex));
+                            synchronized (model) {
+                                model.clear();
+                                int index = 0;
+                                for (ClassInstance classInstance : classInstances) {
+                                    model.add(classInstance.type.name(), classInstance.count);
+                                    if (classInstance.type.equals(selected)) {
+                                        int finalIndex = index;
+                                        SwingUtilities.invokeLater(() -> table.setRowSelectionInterval(finalIndex,
+                                            finalIndex));
+                                    }
+                                    index++;
                                 }
-                                index++;
                             }
                             SwingUtilities.invokeLater(() -> table.updateUI());
                             String plural = classes.size() % 10 == 1 ? "class" : "classes";

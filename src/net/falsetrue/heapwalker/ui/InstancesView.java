@@ -571,7 +571,8 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
 
         @Override
         public boolean check(ObjectReference reference, ObjectMap<CreationInfo> objectMap) {
-            return locationEquals(objectMap.get(reference).getUserCodeLocation());
+            CreationInfo creationInfo = objectMap.get(reference);
+            return locationEquals(creationInfo == null ? null : creationInfo.getUserCodeLocation());
         }
 
         @Override
