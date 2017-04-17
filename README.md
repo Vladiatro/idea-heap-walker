@@ -8,6 +8,8 @@ Remember that if you invoked object's methods but didn't use its fields, you may
 
 These metrics don't work with arrays!
 
+More info you will find on [Wiki](https://github.com/Vladiatro/idea-heap-walker/wiki).
+
 All this data can be aggregated within the instances of a class: you will see charts with the distribution of object lifetimes,
 last usage times, the most object generative code lines and methods. These charts can be used for further filtering of objects
 in the list. You can view the referring objects using the right mouse button. Also you can find the object from the standard
@@ -16,7 +18,7 @@ debugger: right click on it, then 'Show in Heap'.
 It's better to perform analysis when the program is suspended on a breakpoint.
 
 ### Installing the plugin
-* Download the plugin [here](http://falsetrue.net/idea-profiler.jar).
+* Download the plugin [here](http://falsetrue.net/prof/idea-profiler.jar).
 * Copy the file to the .IntelliJIDEAxx/config/plugins folder, and then (re)start the IDE.
 * Select File | Settings.
 * Under IDE Settings, click Plugins.
