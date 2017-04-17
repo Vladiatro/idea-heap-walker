@@ -138,34 +138,18 @@ public class MyPanel extends JBSplitter {
                         .getDebugProcess()
                         .getProcessHandler()
                 );
+            if (debugProcess.isAttached()) {
+                debugProcess.getManagerThread().invoke(new DebuggerCommandImpl() {
+                    @Override
+                    protected void action() throws Exception {
+                        attachProcess(debugSession, debugProcess);
+                    }
+                });
+            }
             debugProcess.addDebugProcessListener(new DebugProcessListener() {
                 @Override
                 public void processAttached(DebugProcess process) {
-                    VirtualMachine vm;
-                    try {
-                        vm = getVM(debugProcess);
-                        if (vm == null) {
-                            return;
-                        }
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                        return;
-                    }
-                    ProfileSession profileSession = new ProfileSession(debugProcess, vm);
-                    profileSessions.put(debugSession, profileSession);
-                    (new ClickListener() {
-                        @Override
-                        public boolean onClick(@NotNull MouseEvent event, int clickCount) {
-                            if (clickCount == 1 && table.getSelectedRow() != -1
-                                && classInstances.get(table.getSelectedRow()) != null) {
-                                handleClassSelection(classInstances.get(table.getSelectedRow()).type);
-                                return true;
-                            }
-                            return false;
-                        }
-                    }).installOn(table);
-                    updateSession();
-                    profileSession.getTimeManager().start();
+                    attachProcess(debugSession, debugProcess);
                 }
 
                 @Override
@@ -191,6 +175,34 @@ public class MyPanel extends JBSplitter {
         }
     }
 
+    private void attachProcess(XDebugSession debugSession, DebugProcessImpl debugProcess) {
+        VirtualMachine vm;
+        try {
+            vm = getVM(debugProcess);
+            if (vm == null) {
+                return;
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+            return;
+        }
+        ProfileSession profileSession = new ProfileSession(debugProcess, vm);
+        profileSessions.put(debugSession, profileSession);
+        (new ClickListener() {
+            @Override
+            public boolean onClick(@NotNull MouseEvent event, int clickCount) {
+                if (clickCount == 1 && table.getSelectedRow() != -1
+                    && classInstances.get(table.getSelectedRow()) != null) {
+                    handleClassSelection(classInstances.get(table.getSelectedRow()).type);
+                    return true;
+                }
+                return false;
+            }
+        }).installOn(table);
+        updateSession();
+        profileSession.getTimeManager().start();
+    }
+
     public void updateSession() {
         if (project.isDisposed()) {
             return;
@@ -198,8 +210,7 @@ public class MyPanel extends JBSplitter {
         XDebugSession session = XDebuggerManager.getInstance(project).getCurrentSession();
         if (!profileSessions.containsKey(session)) {
             debugSessionStart(session);
-        }
-        if (currentSession == profileSessions.get(session)) {
+        } else if (currentSession == profileSessions.get(session)) {
             return;
         }
         currentSession = profileSessions.get(session);

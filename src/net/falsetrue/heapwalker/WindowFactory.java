@@ -28,6 +28,7 @@ public class WindowFactory implements ToolWindowFactory {
         MyStateService.getInstance(project).setPanel(panel);
         Content content = ContentFactory.SERVICE.getInstance().createContent(panel, "", false);
         toolWindow.getContentManager().addContent(content);
+        panel.updateSession();
 
         MessageBusConnection connection = project.getMessageBus().connect(project);
         connection.subscribe(XDebuggerManager.TOPIC, new XDebuggerManagerListener() {
