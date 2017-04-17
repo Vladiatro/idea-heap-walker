@@ -26,7 +26,7 @@ public class Chart<T> extends JPanel {
 
     private static final int CHART_WIDTH_PERCENT = 96;
     private static final int CHART_MARGIN_PERCENT = (100 - CHART_WIDTH_PERCENT) / 2;
-    private static final int SELECTED_LINE_WEIGHT = 6;
+    private static final int SELECTED_LINE_WEIGHT = 2;
 
     private List<Item> data;
     private ItemSelectedListener<T> itemSelectedListener = (object, position) -> {};
