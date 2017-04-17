@@ -18,6 +18,7 @@ import com.intellij.openapi.util.Pair;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.components.*;
+import com.intellij.ui.components.panels.HorizontalLayout;
 import com.intellij.util.ui.components.BorderLayoutPanel;
 import com.intellij.xdebugger.XDebugSession;
 import com.intellij.xdebugger.frame.*;
@@ -47,6 +48,7 @@ import org.jetbrains.java.debugger.JavaDebuggerEditorsProvider;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.ItemEvent;
 import java.util.*;
 import java.util.List;
 import java.util.function.Function;
@@ -81,6 +83,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     private ProfileSession profileSession;
     private Chart<Integer> usageChart;
     private Chart<Itemable> creationPlacesChart;
+    private boolean creationNAEnabled = true;
     private FrameList frameList;
     private GroupType groupType = GroupType.LINE;
     private List<Predicate<ObjectReference>> referenceFilters = new ArrayList<>();
@@ -171,13 +174,23 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
             fullUpdateInstances();
         });
         JPanel panel = new JPanel(new BorderLayout(0, 0));
+        JPanel topPanel = new JPanel(new HorizontalLayout(0));
         JComboBox<GroupType> comboBox = new ComboBox<>(GroupType.values());
         comboBox.addActionListener(e -> {
             groupType = (GroupType) comboBox.getSelectedItem();
             creationPlacesChart.unselect();
             updateCreationPlacesChart();
         });
-        panel.add(new LabeledComponent("Group by: ", comboBox), BorderLayout.NORTH);
+        topPanel.add(new LabeledComponent("Group by: ", comboBox));
+        JBCheckBox checkBox = new JBCheckBox("N/A enabled", true);
+        checkBox.addActionListener(e -> {
+            if (creationNAEnabled != checkBox.isSelected()) {
+                creationNAEnabled = checkBox.isSelected();
+                updateCreationPlacesChart();
+            }
+        });
+        topPanel.add(checkBox);
+        panel.add(topPanel, BorderLayout.NORTH);
         panel.add(creationPlacesChart, BorderLayout.CENTER);
         tabs.insertTab("Creation", null, panel, "Creation places chart", 1);
     }
@@ -255,6 +268,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
                        ObjectReference reference) {
         this.referenceType = referenceType;
         trackUsageAction.setReferenceType(referenceType, profileSession);
+        indicatorTreeRenderer.setUsageTrackingEnabled(trackUsageAction.isSelected());
         trackCreationAction.setReferenceType(referenceType, profileSession);
         if (instancesTree != null && instancesTree.getRoot() != null) {
             SwingUtilities.invokeLater(() -> instancesTree.getRoot().clearChildren());
@@ -337,6 +351,11 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     private void updateCreationPlacesChart(List<ObjectReference> instances) {
         creationPlacesChart.setData(instances.stream()
             .filter(reference -> {
+                if (!creationNAEnabled) {
+                    if (!profileSession.getCreationPlaces().containsKey(reference)) {
+                        return false;
+                    }
+                }
                 for (Predicate<ObjectReference> filter : referenceFilters) {
                     if (filter == creationPlaceFilter) {
                         return true;

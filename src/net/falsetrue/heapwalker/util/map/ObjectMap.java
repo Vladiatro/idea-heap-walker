@@ -76,6 +76,18 @@ public class ObjectMap<T> {
         return null;
     }
 
+    public boolean containsKey(ObjectReference reference) {
+        int pos = (int) (reference.uniqueID() % tableLength);
+        Node node = table[pos];
+        while (node != null) {
+            if (node.id == reference.uniqueID()) {
+                return true;
+            }
+            node = node.next;
+        }
+        return false;
+    }
+
     public void clear() {
         table = new Node[tableLength];
     }

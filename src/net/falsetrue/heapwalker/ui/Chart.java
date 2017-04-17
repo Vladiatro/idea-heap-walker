@@ -145,6 +145,7 @@ public class Chart<T> extends JPanel {
         if (!silently) {
             itemSelectedListener.onSelect(nullObject, -1);
         }
+        selected = -1;
         repaint();
     }
 

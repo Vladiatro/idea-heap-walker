@@ -17,6 +17,7 @@ public class IndicatorTreeRenderer implements TreeCellRenderer {
     private Project project;
     private TreeCellRenderer standardRenderer;
     private ProfileSession profileSession;
+    private boolean usageTrackingEnabled;
 
     public IndicatorTreeRenderer(Project project,
                                  TreeCellRenderer standardRenderer) {
@@ -36,7 +37,8 @@ public class IndicatorTreeRenderer implements TreeCellRenderer {
         TreePath path = tree.getPathForRow(row);
         if (path != null && path.getPathCount() == 2 && value instanceof XValueNodeImpl &&
             profileSession.getTimeManager().isPaused()
-            && ((XValueNodeImpl) value).getValueContainer() instanceof InstanceJavaValue) {
+            && ((XValueNodeImpl) value).getValueContainer() instanceof InstanceJavaValue
+            && usageTrackingEnabled) {
             InstanceJavaValue javaValue = (InstanceJavaValue) ((XValueNodeImpl) value).getValueContainer();
             long time = profileSession.getObjectTimeMap().get(javaValue.getObjectReference());
             Color color;
@@ -65,6 +67,10 @@ public class IndicatorTreeRenderer implements TreeCellRenderer {
             return new Color(255, 511 - value, 0);
         }
         return new Color(Math.max(0, 767 - value), 0, 0);
+    }
+
+    public void setUsageTrackingEnabled(boolean usageTrackingEnabled) {
+        this.usageTrackingEnabled = usageTrackingEnabled;
     }
 
     private class YoPanel extends JPanel {
