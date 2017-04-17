@@ -28,6 +28,10 @@ public class ObjectTimeMap {
         }
     }
 
+    public ObjectTimeMap() {
+        clear();
+    }
+
     public void put(ObjectReference reference, long time) {
         if (reference == null) {
             return;

@@ -21,6 +21,7 @@ import com.sun.jdi.*;
 import com.sun.jdi.event.LocatableEvent;
 import com.sun.jdi.request.BreakpointRequest;
 import com.sun.jdi.request.ClassPrepareRequest;
+import net.falsetrue.heapwalker.ProfileSession;
 import net.falsetrue.heapwalker.util.TimeManager;
 import net.falsetrue.heapwalker.util.map.ObjectMap;
 import net.falsetrue.heapwalker.util.map.ObjectTimeMap;
@@ -34,23 +35,18 @@ public class CreationMonitoring {
     private DebugProcessImpl debugProcess;
     private Project project;
     private final ReferenceType referenceType;
-    private TimeManager timeManager;
-    private ObjectMap<CreationInfo> creationPlaces;
+    private final ProfileSession profileSession;
     private boolean enabled;
     private boolean started;
 
-    public CreationMonitoring(@NotNull XDebugSession debugSession,
-                              ReferenceType referenceType,
-                              TimeManager timeManager,
-                              ObjectMap<CreationInfo> creationPlaces) {
+    public CreationMonitoring(ReferenceType referenceType,
+                              ProfileSession profileSession) {
         this.referenceType = referenceType;
-        this.timeManager = timeManager;
-        project = debugSession.getProject();
-
-        this.creationPlaces = creationPlaces;
+        this.profileSession = profileSession;
+        project = profileSession.getDebugSession().getProject();
 
         debugProcess = (DebugProcessImpl) DebuggerManager.getInstance(project)
-            .getDebugProcess(debugSession.getDebugProcess().getProcessHandler());
+            .getDebugProcess(profileSession.getDebugProcess().getProcessHandler());
 
         ApplicationManager.getApplication().runReadAction(() -> {
             stubFileName = JavaPsiFacade.getInstance(project).findClass("java.lang.Object",
@@ -96,13 +92,13 @@ public class CreationMonitoring {
             try {
                 ThreadReference thread = event.thread();
                 ObjectReference object = thread.frame(0).thisObject();
-                creationPlaces.putIfAbsent(object, () -> {
+                profileSession.getCreationPlaces().putIfAbsent(object, () -> {
                     try {
                         List<Location> stack = new ArrayList<>(thread.frameCount());
                         for (int i = 0; i < thread.frameCount(); i++) {
                             stack.add(thread.frame(i).location());
                         }
-                        return new CreationInfo(stack, project, timeManager.getTime());
+                        return new CreationInfo(stack, project, profileSession.getTimeManager().getTime());
                     } catch (IncompatibleThreadStateException e) {
                         e.printStackTrace();
                         return null;

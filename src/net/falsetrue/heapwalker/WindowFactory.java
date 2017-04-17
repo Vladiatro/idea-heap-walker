@@ -1,5 +1,9 @@
 package net.falsetrue.heapwalker;
 
+import com.intellij.execution.Executor;
+import com.intellij.execution.ui.RunContentDescriptor;
+import com.intellij.execution.ui.RunContentManager;
+import com.intellij.execution.ui.RunContentWithExecutorListener;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowFactory;
@@ -13,14 +17,14 @@ import com.intellij.xdebugger.XDebuggerManagerListener;
 import net.falsetrue.heapwalker.ui.MyPanel;
 import net.falsetrue.heapwalker.util.TimeManager;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 
 public class WindowFactory implements ToolWindowFactory {
     @Override
     public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
-        TimeManager timeManager = new TimeManager();
-        MyPanel panel = new MyPanel(project, timeManager);
+        MyPanel panel = new MyPanel(project);
         MyStateService.getInstance(project).setPanel(panel);
         Content content = ContentFactory.SERVICE.getInstance().createContent(panel, "", false);
         toolWindow.getContentManager().addContent(content);
@@ -29,11 +33,10 @@ public class WindowFactory implements ToolWindowFactory {
         connection.subscribe(XDebuggerManager.TOPIC, new XDebuggerManagerListener() {
             @Override
             public void processStarted(@NotNull XDebugProcess xDebugProcess) {
-                SwingUtilities.invokeLater(() -> {
-                    XDebugSession session = xDebugProcess.getSession();
-                    panel.debugSessionStart(session);
-                    timeManager.start();
-                });
+//                SwingUtilities.invokeLater(() -> {
+//                    XDebugSession session = xDebugProcess.getSession();
+//                    panel.debugSessionStart(session);
+//                });
             }
 
             @Override
@@ -42,6 +45,17 @@ public class WindowFactory implements ToolWindowFactory {
                     XDebugSession session = xDebugProcess.getSession();
                     panel.debugSessionStop(session);
                 });
+            }
+        });
+        connection.subscribe(RunContentManager.TOPIC, new RunContentWithExecutorListener() {
+            @Override
+            public void contentSelected(@Nullable RunContentDescriptor descriptor, @NotNull Executor executor) {
+                panel.updateSession();
+            }
+
+            @Override
+            public void contentRemoved(@Nullable RunContentDescriptor descriptor, @NotNull Executor executor) {
+                panel.updateSession();
             }
         });
     }

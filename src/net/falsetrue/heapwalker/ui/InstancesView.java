@@ -33,6 +33,7 @@ import com.sun.jdi.*;
 import net.falsetrue.heapwalker.InstanceJavaValue;
 import net.falsetrue.heapwalker.InstanceValueDescriptor;
 import net.falsetrue.heapwalker.MyStateService;
+import net.falsetrue.heapwalker.ProfileSession;
 import net.falsetrue.heapwalker.actions.TrackCreationAction;
 import net.falsetrue.heapwalker.actions.TrackUsageAction;
 import net.falsetrue.heapwalker.monitorings.CreationInfo;
@@ -74,41 +75,33 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     private MyNodeManager myNodeManager;
     private ActionManager myActionManager;
     private Project project;
-    private XDebugSession debugSession;
-    private VirtualMachine virtualMachine;
     private ReferenceType referenceType;
-    private DebugProcessImpl debugProcess;
     private MyNodeManager nodeManager;
     private int selected = -1;
-    private TimeManager timeManager;
-    private ObjectTimeMap objectTimeMap;
-    private ObjectMap<CreationInfo> creationPlaces;
+    private ProfileSession profileSession;
     private Chart<Integer> usageChart;
     private Chart<Itemable> creationPlacesChart;
     private FrameList frameList;
     private GroupType groupType = GroupType.LINE;
     private List<Predicate<ObjectReference>> referenceFilters = new ArrayList<>();
     private List<Chart<?>> filterCharts = new ArrayList<>();
+    private IndicatorTreeRenderer indicatorTreeRenderer;
     private Predicate<ObjectReference> usageFilter;
     private Predicate<ObjectReference> creationPlaceFilter;
     private Predicate<ObjectReference> creationTimeFilter;
 
-    public InstancesView(Project project, TimeManager timeManager) {
+    public InstancesView(Project project) {
         myNodeManager = new MyNodeManager(project);
         this.project = project;
-        this.timeManager = timeManager;
         nodeManager = new MyNodeManager(project);
         JavaDebuggerEditorsProvider editorsProvider = new JavaDebuggerEditorsProvider();
         XValueMarkers markers = this.getValueMarkers();
         XDebuggerTreeCreator treeCreator = new XDebuggerTreeCreator(project, editorsProvider,
             null, markers);
         instancesTree = (XDebuggerTree)treeCreator.createTree(getTreeRootDescriptor());
-        objectTimeMap = new ObjectTimeMap();
-        creationPlaces = new ObjectMap<>();
-        if (!(instancesTree.getCellRenderer() instanceof IndicatorTreeRenderer)) {
-            instancesTree.setCellRenderer(new IndicatorTreeRenderer(project,
-                instancesTree.getCellRenderer(), objectTimeMap, timeManager));
-        }
+        indicatorTreeRenderer = new IndicatorTreeRenderer(project,
+            instancesTree.getCellRenderer());
+        instancesTree.setCellRenderer(indicatorTreeRenderer);
         instancesTree.setRootVisible(false);
         instancesTree.getRoot().setLeaf(false);
         instancesTree.setExpandableItemsEnabled(true);
@@ -128,7 +121,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
             if (e.getPath().getPathCount() > 1 && e.getPath().getPathComponent(1) instanceof XValueNodeImpl) {
                 InstanceJavaValue javaValue = (InstanceJavaValue) ((XValueNodeImpl) e.getPath().getPathComponent(1))
                     .getValueContainer();
-                CreationInfo creationInfo = creationPlaces.get(javaValue.getObjectReference());
+                CreationInfo creationInfo = profileSession.getCreationPlaces().get(javaValue.getObjectReference());
                 frameList.setData(creationInfo == null ? null : creationInfo.getStack());
             }
         });
@@ -172,7 +165,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
                 fullUpdateInstances();
                 return;
             }
-            creationPlaceFilter = reference -> object.check(reference, creationPlaces);
+            creationPlaceFilter = reference -> object.check(reference, profileSession.getCreationPlaces());
             referenceFilters.add(creationPlaceFilter);
             filterCharts.add(creationPlacesChart);
             fullUpdateInstances();
@@ -209,9 +202,9 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
                 return;
             }
             usageFilter = reference -> {
-                long time = objectTimeMap.get(reference);
+                long time = profileSession.getObjectTimeMap().get(reference);
                 if (time > -1) {
-                    time = timeManager.getTime() - time;
+                    time = profileSession.getTimeManager().getTime() - time;
                     return object == Math.min(6, (int) (time * 6 / blackAge));
                 }
                 return object == 6;
@@ -226,8 +219,11 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     }
 
     private XValueMarkers<?, ?> getValueMarkers() {
-        return debugSession instanceof XDebugSessionImpl ?
-            ((XDebugSessionImpl)debugSession).getValueMarkers() : null;
+        if (profileSession == null) {
+            return null;
+        }
+        return profileSession.getDebugSession() instanceof XDebugSessionImpl ?
+            ((XDebugSessionImpl)profileSession.getDebugSession()).getValueMarkers() : null;
     }
 
     @NotNull
@@ -250,21 +246,16 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
         }
     }
 
-    public void setVirtualMachine(VirtualMachine virtualMachine) {
-        this.virtualMachine = virtualMachine;
-    }
-
-    public void setDebugProcess(DebugProcessImpl debugProcess) {
-        this.debugProcess = debugProcess;
-        objectTimeMap.clear();
+    public void setProfileSession(ProfileSession profileSession) {
+        this.profileSession = profileSession;
+        indicatorTreeRenderer.setProfileSession(profileSession);
     }
 
     public void update(ReferenceType referenceType,
                        ObjectReference reference) {
         this.referenceType = referenceType;
-        debugSession = debugProcess.getSession().getXDebugSession();
-        trackUsageAction.setReferenceType(objectTimeMap, debugSession, referenceType, timeManager);
-        trackCreationAction.setReferenceType(creationPlaces, debugSession, referenceType, timeManager);
+        trackUsageAction.setReferenceType(referenceType, profileSession);
+        trackCreationAction.setReferenceType(referenceType, profileSession);
         if (instancesTree != null && instancesTree.getRoot() != null) {
             SwingUtilities.invokeLater(() -> instancesTree.getRoot().clearChildren());
         }
@@ -273,7 +264,12 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     }
 
     public void clear() {
-        SwingUtilities.invokeLater(instancesTree.getRoot()::clearChildren);
+        if (profileSession != null) {
+            SwingUtilities.invokeLater(instancesTree.getRoot()::clearChildren);
+            creationPlacesChart.clear();
+            usageChart.clear(true);
+            clearFilters();
+        }
     }
 
     private void fullUpdateInstances() {
@@ -284,10 +280,11 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     }
 
     private void updateUsageChart(int blackAge) {
-        if (virtualMachine == null || debugProcess == null || debugProcess.isDetached() || referenceType == null) {
+        if (profileSession.getVirtualMachine() == null || profileSession.getDebugProcess() == null
+            || profileSession.getDebugProcess().isDetached() || referenceType == null) {
             return;
         }
-        debugProcess.getManagerThread().invoke(new DebuggerCommandImpl() {
+        profileSession.getDebugProcess().getManagerThread().invoke(new DebuggerCommandImpl() {
             @Override
             protected void action() throws Exception {
                 List<ObjectReference> instances = referenceType.instances(0);
@@ -297,7 +294,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     }
 
     private void updateUsageChart(List<ObjectReference> instances, int blackAge) {
-        if (timeManager.isPaused() && trackUsageAction.isSelected()) {
+        if (profileSession.getTimeManager().isPaused() && trackUsageAction.isSelected()) {
             int[] counts = new int[7];
             in: for (ObjectReference instance : instances) {
                 for (Predicate<ObjectReference> filter : referenceFilters) {
@@ -309,9 +306,9 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
                     }
                 }
 
-                long time = objectTimeMap.get(instance);
+                long time = profileSession.getObjectTimeMap().get(instance);
                 if (time > -1) {
-                    time = timeManager.getTime() - time;
+                    time = profileSession.getTimeManager().getTime() - time;
                     counts[Math.min(6, (int) (time * 6 / blackAge))]++;
                 } else {
                     counts[6]++;
@@ -324,10 +321,11 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     }
 
     private void updateCreationPlacesChart() {
-        if (virtualMachine == null || debugProcess == null || debugProcess.isDetached() || referenceType == null) {
+        if (profileSession.getVirtualMachine() == null || profileSession.getDebugProcess() == null
+            || profileSession.getDebugProcess().isDetached() || referenceType == null) {
             return;
         }
-        debugProcess.getManagerThread().invoke(new DebuggerCommandImpl() {
+        profileSession.getDebugProcess().getManagerThread().invoke(new DebuggerCommandImpl() {
             @Override
             protected void action() throws Exception {
                 List<ObjectReference> instances = referenceType.instances(0);
@@ -350,7 +348,7 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
                 return true;
             })
             .map((reference) -> {
-                CreationInfo creationInfo = creationPlaces.get(reference);
+                CreationInfo creationInfo = profileSession.getCreationPlaces().get(reference);
                 return creationInfo == null ? null : creationInfo.getUserCodeLocation();
             })
             .collect(Collectors.groupingBy(groupType.getSupplier(), Collectors.reducing(0, e -> 1, Integer::sum)))
@@ -361,17 +359,19 @@ public class InstancesView extends BorderLayoutPanel implements Disposable {
     }
 
     private void updateInstances(ObjectReference reference, boolean recompute) {
-        if (virtualMachine == null || debugProcess == null || debugProcess.isDetached()) {
+        if (profileSession == null || profileSession.getDebugProcess() == null
+            || profileSession.getDebugProcess().isDetached()) {
             return;
         }
         if (!recompute && instancesTree.getRoot().getChildCount() > 0) {
             return;
         }
-        debugProcess.getManagerThread().invoke(new DebuggerCommandImpl() {
+        profileSession.getDebugProcess().getManagerThread().invoke(new DebuggerCommandImpl() {
             @Override
             protected void action() throws Exception {
                 List<ObjectReference> instances = referenceType.instances(0);
-                EvaluationContextImpl evaluationContext = debugProcess.getDebuggerContext().createEvaluationContext();
+                EvaluationContextImpl evaluationContext = profileSession.getDebugProcess()
+                    .getDebuggerContext().createEvaluationContext();
 
                 selected = -1;
                 XValueChildrenList list = new XValueChildrenList();

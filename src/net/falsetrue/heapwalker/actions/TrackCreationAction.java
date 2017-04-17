@@ -7,6 +7,7 @@ import com.intellij.openapi.actionSystem.ToggleAction;
 import com.intellij.xdebugger.XDebugSession;
 import com.sun.jdi.ArrayType;
 import com.sun.jdi.ReferenceType;
+import net.falsetrue.heapwalker.ProfileSession;
 import net.falsetrue.heapwalker.monitorings.AccessMonitoring;
 import net.falsetrue.heapwalker.monitorings.CreationInfo;
 import net.falsetrue.heapwalker.monitorings.CreationMonitoring;
@@ -31,12 +32,10 @@ public class TrackCreationAction extends ToggleAction {
         templatePresentation.setDescription(null);
     }
 
-    public void setReferenceType(ObjectMap<CreationInfo> creationPlaces,
-                                 XDebugSession debugSession,
-                                 ReferenceType referenceType,
-                                 TimeManager timeManager) {
+    public void setReferenceType(ReferenceType referenceType,
+                                 ProfileSession profileSession) {
         currentMonitoring = monitorings.computeIfAbsent(referenceType,
-            k -> new CreationMonitoring(debugSession, referenceType, timeManager, creationPlaces));
+            k -> new CreationMonitoring(referenceType, profileSession));
         mySelected = currentMonitoring.isEnabled();
         enabled = !(referenceType instanceof ArrayType);
     }

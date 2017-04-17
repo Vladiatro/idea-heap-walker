@@ -19,6 +19,7 @@ import com.sun.jdi.*;
 import com.sun.jdi.event.AccessWatchpointEvent;
 import com.sun.jdi.event.LocatableEvent;
 import com.sun.jdi.request.AccessWatchpointRequest;
+import net.falsetrue.heapwalker.ProfileSession;
 import net.falsetrue.heapwalker.util.map.ObjectTimeMap;
 import net.falsetrue.heapwalker.util.TimeManager;
 import org.jetbrains.annotations.NotNull;
@@ -29,21 +30,19 @@ public class AccessMonitoring {
     private String stubFileName;
     private DebugProcessImpl debugProcess;
     private Project project;
-    private TimeManager timeManager;
     private ReferenceType referenceType;
-    private ObjectTimeMap objectTimeMap;
+    private ProfileSession profileSession;
     private boolean enabled;
     private boolean started;
 
-    public AccessMonitoring(@NotNull XDebugSession debugSession, ReferenceType type,
-                            TimeManager timeManager, ObjectTimeMap objectTimeMap) {
+    public AccessMonitoring(ReferenceType type,
+                            ProfileSession profileSession) {
         this.referenceType = type;
-        project = debugSession.getProject();
-        this.timeManager = timeManager;
-        this.objectTimeMap = objectTimeMap;
+        project = profileSession.getDebugSession().getProject();
+        this.profileSession = profileSession;
 
         debugProcess = (DebugProcessImpl) DebuggerManager.getInstance(project)
-            .getDebugProcess(debugSession.getDebugProcess().getProcessHandler());
+            .getDebugProcess(profileSession.getDebugProcess().getProcessHandler());
 
         ApplicationManager.getApplication().runReadAction(() -> {
             stubFileName = JavaPsiFacade.getInstance(project).findClass("java.lang.Object",
@@ -82,7 +81,8 @@ public class AccessMonitoring {
 
         public boolean processLocatableEvent(SuspendContextCommandImpl action, LocatableEvent event) throws EventProcessingException {
             if (enabled) {
-                objectTimeMap.put(((AccessWatchpointEvent)event).object(), timeManager.getTime());
+                profileSession.getObjectTimeMap()
+                    .put(((AccessWatchpointEvent)event).object(), profileSession.getTimeManager().getTime());
             }
             return false;
         }

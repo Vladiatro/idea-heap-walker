@@ -137,13 +137,19 @@ public class Chart<T> extends JPanel {
         }
     }
 
-    public void clear() {
+    public void clear(boolean silently) {
         if (data == null) {
             return;
         }
         data = null;
-        itemSelectedListener.onSelect(nullObject, -1);
+        if (!silently) {
+            itemSelectedListener.onSelect(nullObject, -1);
+        }
         repaint();
+    }
+
+    public void clear() {
+        clear(false);
     }
 
     public void setData(List<Item> data) {

@@ -14,7 +14,9 @@ import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.ui.components.BorderLayoutPanel;
 import com.intellij.xdebugger.XDebugSession;
+import com.intellij.xdebugger.XDebuggerManager;
 import com.sun.jdi.*;
+import net.falsetrue.heapwalker.ProfileSession;
 import net.falsetrue.heapwalker.monitorings.CreationMonitoring;
 import net.falsetrue.heapwalker.util.TimeManager;
 import org.jetbrains.annotations.NotNull;
@@ -36,12 +38,13 @@ public class MyPanel extends JBSplitter {
     private JBTable table;
     private InstancesView instancesView;
     private final Project project;
-    private TimeManager timeManager;
     private volatile List<ClassInstance> classInstances;
-    private volatile boolean debugActive = false;
 
-    private DebugProcessListener listener;
     private ScheduledFuture<?> updaterHandle;
+
+    private Map<XDebugSession, ProfileSession> profileSessions = new HashMap<>();
+    private ProfileSession currentSession;
+    private String preservableReferenceType;
 
     private VirtualMachine getVM(DebugProcessImpl debugProcess) throws InterruptedException {
         BlockingQueue<VirtualMachineProxy> proxyQueue = new ArrayBlockingQueue<>(1);
@@ -65,10 +68,9 @@ public class MyPanel extends JBSplitter {
         return ((VirtualMachineProxyImpl) proxy).getVirtualMachine();
     }
 
-    public MyPanel(Project project, TimeManager timeManager) {
+    public MyPanel(Project project) {
         super(0.3f);
         this.project = project;
-        this.timeManager = timeManager;
 
         countLabel = new JBLabel("");
 //        addToBottom(countLabel);
@@ -77,7 +79,6 @@ public class MyPanel extends JBSplitter {
         table = new JBTable(model);
         table.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN);
         table.getColumnModel().getColumn(0).setMaxWidth(900);
-//        XDebuggerManager.getInstance(project).getCurrentSession().getUI().
         table.getColumnModel().getColumn(1).setMaxWidth(300);
 
         SpeedSearchBase<JBTable> speedSearch = new SpeedSearchBase<JBTable>(table) {
@@ -122,9 +123,7 @@ public class MyPanel extends JBSplitter {
 
         JScrollPane tableScroll = ScrollPaneFactory.createScrollPane(table, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 
-        instancesView = new InstancesView(project, timeManager);
-//        JScrollPane instancesScroll = ScrollPaneFactory.createScrollPane(instancesView,
-//            ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
+        instancesView = new InstancesView(project);
 
         setFirstComponent(tableScroll);
         setSecondComponent(instancesView);
@@ -148,91 +147,131 @@ public class MyPanel extends JBSplitter {
                         if (vm == null) {
                             return;
                         }
-                        instancesView.setVirtualMachine(vm);
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                         return;
                     }
-//                SwingUtilities.invokeLater(() -> {
+                    ProfileSession profileSession = new ProfileSession(debugProcess, vm);
+                    profileSessions.put(debugSession, profileSession);
                     (new ClickListener() {
                         @Override
                         public boolean onClick(@NotNull MouseEvent event, int clickCount) {
-                            if (clickCount == 1) {
+                            if (clickCount == 1 && table.getSelectedRow() != -1
+                                && classInstances.get(table.getSelectedRow()) != null) {
                                 handleClassSelection(classInstances.get(table.getSelectedRow()).type);
                                 return true;
                             }
                             return false;
                         }
                     }).installOn(table);
-//                });
+                    updateSession();
+                    profileSession.getTimeManager().start();
+                }
 
-                    debugActive = true;
-                    if (listener != null) {
-                        debugProcess.removeDebugProcessListener(listener);
+                @Override
+                public void paused(SuspendContext suspendContext) {
+                    if (currentSession != null) {
+                        currentSession.getTimeManager().pause();
                     }
-                    debugProcess.addDebugProcessListener(listener = new DebugProcessListener() {
-                        @Override
-                        public void paused(SuspendContext suspendContext) {
-                            timeManager.pause();
-                            if (table.getSelectedRow() != -1 && classInstances.get(table.getSelectedRow()) != null) {
-                                handleClassSelection(classInstances.get(table.getSelectedRow()).type);
-                            }
-                        }
+                    if (table.getSelectedRow() != -1 && classInstances.get(table.getSelectedRow()) != null) {
+                        handleClassSelection(classInstances.get(table.getSelectedRow()).type);
+                    }
+                }
 
-                        @Override
-                        public void resumed(SuspendContext suspendContext) {
-                            timeManager.resume();
-                            if (table.getSelectedRow() != -1 && classInstances.get(table.getSelectedRow()) != null) {
-                                handleClassSelection(classInstances.get(table.getSelectedRow()).type);
-                            }
-                        }
-                    });
-                    instancesView.setDebugProcess(debugProcess);
-
-                    ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-                    updaterHandle = scheduler.scheduleAtFixedRate(() -> {
-                        try {
-                            List<ReferenceType> classes = vm.allClasses();
-                            ReferenceType selected = null;
-                            if (table.getSelectedRow() != -1) {
-                                selected = classInstances.get(table.getSelectedRow()).type;
-                            }
-                            long[] counts = vm.instanceCounts(classes);
-                            Iterator<ReferenceType> iterator = classes.iterator();
-                            classInstances = new ArrayList<>();
-                            for (long count : counts) {
-                                classInstances.add(new ClassInstance(iterator.next(), count));
-                            }
-                            Collections.sort(classInstances);
-                            synchronized (model) {
-                                model.clear();
-                                int index = 0;
-                                for (ClassInstance classInstance : classInstances) {
-                                    model.add(classInstance.type.name(), classInstance.count);
-                                    if (classInstance.type.equals(selected)) {
-                                        int finalIndex = index;
-                                        SwingUtilities.invokeLater(() -> table.setRowSelectionInterval(finalIndex,
-                                            finalIndex));
-                                    }
-                                    index++;
-                                }
-                            }
-                            SwingUtilities.invokeLater(() -> table.updateUI());
-                            String plural = classes.size() % 10 == 1 ? "class" : "classes";
-                            countLabel.setText(classes.size() + " loaded " + plural);
-                        } catch (VMDisconnectedException e) {
-                            updaterHandle.cancel(false);
-                        }
-                    }, 0, UPDATE_TIME, MILLISECONDS);
+                @Override
+                public void resumed(SuspendContext suspendContext) {
+                    if (currentSession != null) {
+                        currentSession.getTimeManager().resume();
+                    }
+                    if (table.getSelectedRow() != -1 && classInstances.get(table.getSelectedRow()) != null) {
+                        handleClassSelection(classInstances.get(table.getSelectedRow()).type);
+                    }
                 }
             });
         }
     }
 
-    public void debugSessionStop(XDebugSession session) {
-        debugActive = false;
+    public void updateSession() {
+        if (project.isDisposed()) {
+            return;
+        }
+        XDebugSession session = XDebuggerManager.getInstance(project).getCurrentSession();
+        if (!profileSessions.containsKey(session)) {
+            debugSessionStart(session);
+        }
+        if (currentSession == profileSessions.get(session)) {
+            return;
+        }
+        currentSession = profileSessions.get(session);
+        if (currentSession == null) {
+            instancesView.clear();
+            return;
+        }
+        instancesView.setProfileSession(currentSession);
         if (updaterHandle != null) {
+            updaterHandle.cancel(true);
+        }
+        if (table.getSelectedRow() != -1) {
+            preservableReferenceType = classInstances.get(table.getSelectedRow()).type.name();
+        }
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+        updaterHandle = scheduler.scheduleAtFixedRate(() -> {
+            try {
+                List<ReferenceType> classes = currentSession.getVirtualMachine().allClasses();
+                ReferenceType selected = null;
+                if (preservableReferenceType != null) {
+                    List<ReferenceType> types = currentSession.getVirtualMachine().classesByName(preservableReferenceType);
+                    if (types.size() > 0) {
+                        selected = types.get(0);
+                    }
+                } else if (table.getSelectedRow() != -1) {
+                    selected = classInstances.get(table.getSelectedRow()).type;
+                }
+                long[] counts = currentSession.getVirtualMachine().instanceCounts(classes);
+                Iterator<ReferenceType> iterator = classes.iterator();
+                classInstances = new ArrayList<>();
+                for (long count : counts) {
+                    classInstances.add(new ClassInstance(iterator.next(), count));
+                }
+                Collections.sort(classInstances);
+                int selectedIndex = 0;
+                synchronized (model) {
+                    model.clear();
+                    int index = 0;
+                    for (ClassInstance classInstance : classInstances) {
+                        model.add(classInstance.type.name(), classInstance.count);
+                        if (classInstance.type.equals(selected)) {
+                            final int finalIndex = selectedIndex = index;
+                            SwingUtilities.invokeLater(() -> {
+                                table.setRowSelectionInterval(finalIndex,
+                                    finalIndex);
+                                table.scrollRectToVisible(table.getCellRect(finalIndex, 0, true));
+                            });
+                        }
+                        index++;
+                    }
+                }
+                SwingUtilities.invokeLater(() -> table.updateUI());
+                String plural = classes.size() % 10 == 1 ? "class" : "classes";
+                countLabel.setText(classes.size() + " loaded " + plural);
+                if (preservableReferenceType != null) {
+                    instancesView.update(classInstances.get(selectedIndex).type, null);
+                    preservableReferenceType = null;
+                }
+            } catch (VMDisconnectedException e) {
+//                               updaterHandle.cancel(false);
+            }
+        }, 0, UPDATE_TIME, MILLISECONDS);
+        if (table.getSelectedRow() < 0 || table.getSelectedRow() >= classInstances.size()) {
+            instancesView.clear();
+        }
+    }
+
+    public void debugSessionStop(XDebugSession session) {
+        profileSessions.remove(session);
+        if (profileSessions.size() == 0 && updaterHandle != null) {
             updaterHandle.cancel(false);
+            updaterHandle = null;
             SwingUtilities.invokeLater(model::clear);
             instancesView.clear();
         }
@@ -247,8 +286,7 @@ public class MyPanel extends JBSplitter {
             ReferenceType referenceType = reference.referenceType();
             for (int i = 0; i < classInstances.size(); i++) {
                 if (classInstances.get(i).type.equals(referenceType)) {
-                    table.clearSelection();
-                    table.addRowSelectionInterval(i, i);
+                    table.setRowSelectionInterval(i, i);
                     table.scrollRectToVisible(table.getCellRect(i, 0, true));
                     instancesView.update(referenceType, reference);
                     break;

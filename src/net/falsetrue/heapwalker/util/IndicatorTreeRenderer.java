@@ -5,6 +5,7 @@ import com.intellij.ui.components.panels.HorizontalLayout;
 import com.intellij.xdebugger.impl.ui.tree.nodes.XValueNodeImpl;
 import net.falsetrue.heapwalker.InstanceJavaValue;
 import net.falsetrue.heapwalker.MyStateService;
+import net.falsetrue.heapwalker.ProfileSession;
 import net.falsetrue.heapwalker.util.map.ObjectTimeMap;
 
 import javax.swing.*;
@@ -15,17 +16,16 @@ import java.awt.*;
 public class IndicatorTreeRenderer implements TreeCellRenderer {
     private Project project;
     private TreeCellRenderer standardRenderer;
-    private ObjectTimeMap objectTimeMap;
-    private TimeManager timeManager;
+    private ProfileSession profileSession;
 
     public IndicatorTreeRenderer(Project project,
-                                 TreeCellRenderer standardRenderer,
-                                 ObjectTimeMap objectTimeMap,
-                                 TimeManager timeManager) {
+                                 TreeCellRenderer standardRenderer) {
         this.project = project;
         this.standardRenderer = standardRenderer;
-        this.objectTimeMap = objectTimeMap;
-        this.timeManager = timeManager;
+    }
+
+    public void setProfileSession(ProfileSession profileSession) {
+        this.profileSession = profileSession;
     }
 
     @Override
@@ -34,10 +34,11 @@ public class IndicatorTreeRenderer implements TreeCellRenderer {
         Component component = standardRenderer.getTreeCellRendererComponent(tree, value, selected, expanded,
             leaf, row, hasFocus);
         TreePath path = tree.getPathForRow(row);
-        if (path != null && path.getPathCount() == 2 && value instanceof XValueNodeImpl && timeManager.isPaused()
+        if (path != null && path.getPathCount() == 2 && value instanceof XValueNodeImpl &&
+            profileSession.getTimeManager().isPaused()
             && ((XValueNodeImpl) value).getValueContainer() instanceof InstanceJavaValue) {
             InstanceJavaValue javaValue = (InstanceJavaValue) ((XValueNodeImpl) value).getValueContainer();
-            long time = objectTimeMap.get(javaValue.getObjectReference());
+            long time = profileSession.getObjectTimeMap().get(javaValue.getObjectReference());
             Color color;
             int blackAge = MyStateService.getInstance(project).getBlackAgeMilliseconds();
             YoPanel panel = new YoPanel();
@@ -45,7 +46,7 @@ public class IndicatorTreeRenderer implements TreeCellRenderer {
                 color = Color.BLACK;
                 panel.setToolTipText("No recorded usage information");
             } else {
-                time = timeManager.getTime() - time;
+                time = profileSession.getTimeManager().getTime() - time;
                 color = getColor((int) (time * 765 / blackAge));
                 panel.setToolTipText("Last usage: " + NameUtils.minsSecs(time));
             }
