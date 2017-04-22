@@ -2,7 +2,7 @@ package net.falsetrue.heapwalker.util;
 
 public class TimeManager {
     private long from;
-    private long pauseTime;
+    private long pauseTime = System.currentTimeMillis();
     private boolean paused = true;
 
     public void start() {
